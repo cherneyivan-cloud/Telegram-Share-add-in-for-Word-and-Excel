@@ -1,6 +1,11 @@
-﻿# Telegram Share — надстройка COM для Microsoft Word
+﻿# Telegram Share — надстройки для Word и Excel
 
-Отправка текущего документа Word как вложения в Telegram Desktop одной кнопкой.
+[![Скачать](https://img.shields.io/badge/Download-Releases-blue)](https://github.com/cherneyivan-cloud/Telegram-Share-add-in-for-Word-and-Excel/releases)
+[![GitHub](https://img.shields.io/badge/GitHub-repository-black)](https://github.com/cherneyivan-cloud/Telegram-Share-add-in-for-Word-and-Excel)
+
+Отправка текущего документа Word / книги Excel как вложения в Telegram Desktop одной кнопкой.
+
+**Скачать:** [Releases](https://github.com/cherneyivan-cloud/Telegram-Share-add-in-for-Word-and-Excel/releases) → `TelegramShareAddin.zip` → распаковать → запустить `install.bat` (без прав администратора).
 
 Работает через локальное приложение Telegram Desktop (без Bot API(:, через буфер обмена и SendKeys.
 
