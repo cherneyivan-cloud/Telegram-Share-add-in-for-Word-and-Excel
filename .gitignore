@@ -1,0 +1,23 @@
+﻿# Build results
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# NuGet
+packages/
+*.nupkg
+
+# Distribution
+dist/
+*.zip
+
+# Logs
+*.log
