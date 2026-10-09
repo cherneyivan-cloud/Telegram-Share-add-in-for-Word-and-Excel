@@ -15,6 +15,7 @@ namespace TelegramShareAddin
     {
         private static IPictureDisp _imageRectangular;
         private static IPictureDisp _imageRounded;
+        private static IPictureDisp _imageGitHub;
 
         public static string GetCustomUi( string ribbonId )
         {
@@ -54,6 +55,15 @@ namespace TelegramShareAddin
                         _imageRectangular = PictureConverter.ToPictureDisp( IconFactory.CreateRectangular( ) );
                     }
                     return _imageRectangular;
+                }
+
+                if ( control != null && control.Id == "TelegramShareGitHubButton" )
+                {
+                    if ( _imageGitHub == null )
+                    {
+                        _imageGitHub = PictureConverter.ToPictureDisp( IconFactory.CreateGitHub( ) );
+                    }
+                    return _imageGitHub;
                 }
             }
             catch ( Exception ex )
@@ -163,8 +173,21 @@ namespace TelegramShareAddin
             }
         }
 
-        public static void Log( string message )
+        public static void OpenGitHub( )
         {
+            try
+            {
+                Log( "OnOpenGitHub: " + RibbonDefinition.GitHubUrl );
+                System.Diagnostics.Process.Start( new System.Diagnostics.ProcessStartInfo( RibbonDefinition.GitHubUrl ) { UseShellExecute = true } );
+            }
+            catch ( Exception ex )
+            {
+                Log( "OnOpenGitHub ERROR: " + ex.ToString( ) );
+                MessageBox.Show( "Не удалось открыть ссылку: " + ex.Message , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Error );
+            }
+        }
+
+        public static void Log( string message )        {
             try
             {
                 string dir = Path.Combine( Environment.GetFolderPath( Environment.SpecialFolder.ApplicationData ) , "TelegramShareAddin" );

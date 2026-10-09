@@ -3,6 +3,8 @@
     /// <summary>Разметка ленты Office, общая для Word и Excel.</summary>
     internal static class RibbonDefinition
     {
+        public const string GitHubUrl = "https://github.com/cherneyivan-cloud/Telegram-Share-add-in-for-Word-and-Excel";
+
         public const string Xml =
             "<customUI xmlns=\"http://schemas.microsoft.com/office/2006/01/customui\">" +
             "<ribbon>" +
@@ -17,6 +19,12 @@
             " size=\"large\" getImage=\"GetButtonImage\" screentip=\"Отправить в Telegram с сообщением\"" +
             " supertip=\"Сохраняет текущий документ и отправляет его выбранному контакту с подписью\"" +
             " onAction=\"OnSendButton\"/>" +
+            "</group>" +
+            "<group id=\"TelegramShareLinksGroup\" label=\"Проект\">" +
+            "<button id=\"TelegramShareGitHubButton\" label=\"GitHub\" size=\"large\" getImage=\"GetButtonImage\"" +
+            " screentip=\"Страница проекта на GitHub\"" +
+            " supertip=\"" + GitHubUrl + "\"" +
+            " onAction=\"OnOpenGitHub\"/>" +
             "</group>" +
             "</tab>" +
             "</tabs>" +
