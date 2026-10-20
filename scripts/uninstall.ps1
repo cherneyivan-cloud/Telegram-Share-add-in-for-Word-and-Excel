@@ -12,7 +12,8 @@ $InstallDir = Join-Path $env:APPDATA "TelegramShareAddin"
 
 $items = @(
     @{ ProgId = "TelegramShareAddin"; Clsid = "{AD3B6C2F-4E5F-4A8B-9C1D-3E4F5A6B7C8D}"; App = "Word" } ,
-    @{ ProgId = "TelegramShareExcel"; Clsid = "{B1C2D3E4-F5A6-4B7C-8D9E-0F1A2B3C4D5E}"; App = "Excel" }
+    @{ ProgId = "TelegramShareExcel"; Clsid = "{B1C2D3E4-F5A6-4B7C-8D9E-0F1A2B3C4D5E}"; App = "Excel" } ,
+    @{ ProgId = "TelegramShareOutlook"; Clsid = "{C2D3E4F5-A6B7-4C8D-9E0F-1A2B3C4D5E6F}"; App = "Outlook" }
 )
 
 Write-Host "== Удаление Telegram Share ==" -ForegroundColor Cyan

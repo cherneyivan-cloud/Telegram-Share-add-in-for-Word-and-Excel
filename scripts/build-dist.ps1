@@ -31,9 +31,11 @@ New-Item -ItemType Directory -Force -Path ( Join-Path $dist "scripts" ) | Out-Nu
 
 $wordBin = Join-Path $root "src\TelegramShareAddin\bin\Release"
 $excelBin = Join-Path $root "src\TelegramShareExcelAddin\bin\Release"
+$outlookBin = Join-Path $root "src\TelegramShareOutlookAddin\bin\Release"
 
 Get-ChildItem -Path $wordBin -Filter "*.dll" | Copy-Item -Destination $dist -Force
 Get-ChildItem -Path $excelBin -Filter "*.dll" | Copy-Item -Destination $dist -Force
+Get-ChildItem -Path $outlookBin -Filter "*.dll" | Copy-Item -Destination $dist -Force
 
 foreach ( $name in @( "install.ps1", "uninstall.ps1", "check_install.ps1" ) ) {
     Copy-Item -Path ( Join-Path $root "scripts\$name" ) -Destination ( Join-Path $dist "scripts" ) -Force

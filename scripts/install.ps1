@@ -23,7 +23,10 @@ function Find-Source( $dllName ) {
         ( Join-Path $PSScriptRoot "..\src\TelegramShareAddin\bin\x64\Debug" ),
         ( Join-Path $PSScriptRoot "..\src\TelegramShareExcelAddin\bin\Release" ),
         ( Join-Path $PSScriptRoot "..\src\TelegramShareExcelAddin\bin\x64\Release" ),
-        ( Join-Path $PSScriptRoot "..\src\TelegramShareExcelAddin\bin\Debug" )
+        ( Join-Path $PSScriptRoot "..\src\TelegramShareExcelAddin\bin\Debug" ),
+        ( Join-Path $PSScriptRoot "..\src\TelegramShareOutlookAddin\bin\Release" ),
+        ( Join-Path $PSScriptRoot "..\src\TelegramShareOutlookAddin\bin\x64\Release" ),
+        ( Join-Path $PSScriptRoot "..\src\TelegramShareOutlookAddin\bin\Debug" )
     )
     foreach ( $c in $cands ) {
         if ( $c -and ( Test-Path -Path ( Join-Path $c $dllName ) ) ) {
@@ -60,17 +63,18 @@ function Register-Addin( $progId, $clsid, $className, $assemblyName, $dllPath, $
     Write-Host ( "  [" + $officeApp + "] " + $progId + " -> " + $dllPath ) -ForegroundColor Green
 }
 
-Write-Host "== Установка Telegram Share — Word и Excel ==" -ForegroundColor Cyan
+Write-Host "== Установка Telegram Share — Word, Excel и Outlook ==" -ForegroundColor Cyan
 
 $wordSrc = Find-Source "TelegramShareAddin.dll"
 $excelSrc = Find-Source "TelegramShareExcel.dll"
+$outlookSrc = Find-Source "TelegramShareOutlook.dll"
 
-if ( -not $wordSrc -and -not $excelSrc ) {
-    throw "Не найдены TelegramShareAddin.dll / TelegramShareExcel.dll. Укажите -SourcePath к папке со сборкой."
+if ( -not $wordSrc -and -not $excelSrc -and -not $outlookSrc ) {
+    throw "Не найдены DLL надстроек. Укажите -SourcePath к папке со сборкой."
 }
 
 # --- Word/Excel должны быть закрыты ---
-$busy = Get-Process -Name WINWORD,EXCEL -ErrorAction SilentlyContinue
+$busy = Get-Process -Name WINWORD,EXCEL,OUTLOOK -ErrorAction SilentlyContinue
 if ( $busy -and ( -not $Yes ) ) {
     Write-Host "Обнаружены запущенные Word/Excel. Перезапустите их после установки." -ForegroundColor Yellow
     $ans = Read-Host "Продолжить установку? (y/N)"
@@ -79,9 +83,16 @@ if ( $busy -and ( -not $Yes ) ) {
 
 # --- Копирование файлов ---
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-foreach ( $src in @( $wordSrc, $excelSrc ) ) {
+foreach ( $src in @( $wordSrc, $excelSrc, $outlookSrc ) ) {
     if ( $src ) {
-        Get-ChildItem -Path $src -Filter "*.dll" | Copy-Item -Destination $InstallDir -Force
+        foreach ( $file in ( Get-ChildItem -Path $src -Filter "*.dll" ) ) {
+            try {
+                Copy-Item -Path $file.FullName -Destination $InstallDir -Force -ErrorAction Stop
+            }
+            catch {
+                Write-Host ( "  [пропуск] " + $file.Name + " занят запущенным Office" ) -ForegroundColor Yellow
+            }
+        }
     }
 }
 Write-Host "Файлы скопированы в $InstallDir" -ForegroundColor Green
@@ -95,9 +106,13 @@ if ( $excelSrc ) {
     Register-Addin "TelegramShareExcel" "{B1C2D3E4-F5A6-4B7C-8D9E-0F1A2B3C4D5E}" "TelegramShareAddin.ExcelAddin" `
         "TelegramShareExcel" ( Join-Path $InstallDir "TelegramShareExcel.dll" ) "Excel" "Отправить в Telegram"
 }
+if ( $outlookSrc ) {
+    Register-Addin "TelegramShareOutlook" "{C2D3E4F5-A6B7-4C8D-9E0F-1A2B3C4D5E6F}" "TelegramShareAddin.OutlookAddin" `
+        "TelegramShareOutlook" ( Join-Path $InstallDir "TelegramShareOutlook.dll" ) "Outlook" "Отправить в Telegram"
+}
 
 # --- Сброс списка отключённых надстроек Office ---
-foreach ( $app in @( "Word", "Excel" ) ) {
+foreach ( $app in @( "Word", "Excel", "Outlook" ) ) {
     $resiliency = "HKCU:\Software\Microsoft\Office\16.0\$app\Resiliency"
     if ( Test-Path -Path $resiliency ) {
         Remove-Item -Path "$resiliency\DisabledItems" -Recurse -Force -ErrorAction SilentlyContinue
@@ -120,4 +135,4 @@ if ( Test-Path -Path $tgExe ) {
 }
 
 Write-Host ""
-Write-Host "Готово. Перезапустите Word и/или Excel — вкладка «Отправить в Telegram» появится на ленте."
+Write-Host "Готово. Перезапустите Word, Excel и Outlook — вкладка «Отправить в Telegram» появится на ленте."

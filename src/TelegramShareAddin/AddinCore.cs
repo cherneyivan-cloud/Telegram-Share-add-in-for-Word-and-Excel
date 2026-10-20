@@ -73,7 +73,7 @@ namespace TelegramShareAddin
             return null;
         }
 
-        public static void SendMessage( Settings settings , Func<bool> hasDocument , Func<SendFileFormat,string> saveDocument , string noDocumentMessage , string nativeLabel )
+        public static void SendMessage( Settings settings , Func<bool> hasDocument , Func<SendFileFormat,string> saveDocument , string noDocumentMessage , string nativeLabel , bool allowPdf )
         {
             try
             {
@@ -85,7 +85,7 @@ namespace TelegramShareAddin
                     return;
                 }
 
-                using ( var form = new SendForm( settings , nativeLabel ) )
+                using ( var form = new SendForm( settings , nativeLabel , allowPdf ) )
                 {
                     if ( form.ShowDialog( ) != DialogResult.OK )
                     {
@@ -129,7 +129,7 @@ namespace TelegramShareAddin
             }
         }
 
-        public static void SendVia( Settings settings , Func<bool> hasDocument , Func<SendFileFormat,string> saveDocument , string noDocumentMessage , string nativeLabel )
+        public static void SendVia( Settings settings , Func<bool> hasDocument , Func<SendFileFormat,string> saveDocument , string noDocumentMessage , string nativeLabel , bool allowPdf )
         {
             try
             {
@@ -143,13 +143,20 @@ namespace TelegramShareAddin
 
                 SendFileFormat format = settings.LastFormat == "DOCX" ? SendFileFormat.Docx : SendFileFormat.Pdf;
 
-                using ( var formatForm = new FormatForm( format , nativeLabel ) )
+                if ( allowPdf )
                 {
-                    if ( formatForm.ShowDialog( ) != DialogResult.OK )
+                    using ( var formatForm = new FormatForm( format , nativeLabel ) )
                     {
-                        return;
+                        if ( formatForm.ShowDialog( ) != DialogResult.OK )
+                        {
+                            return;
+                        }
+                        format = formatForm.Format;
                     }
-                    format = formatForm.Format;
+                }
+                else
+                {
+                    format = SendFileFormat.Docx;
                 }
 
                 Cursor.Current = Cursors.WaitCursor;

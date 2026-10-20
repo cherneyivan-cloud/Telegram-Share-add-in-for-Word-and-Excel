@@ -1,9 +1,9 @@
-﻿# Telegram Share — надстройки для Word и Excel
+﻿# Telegram Share — надстройки для Word, Excel и Outlook
 
 [![Скачать](https://img.shields.io/badge/Download-Releases-blue)](https://github.com/cherneyivan-cloud/Telegram-Share-add-in-for-Word-and-Excel/releases)
 [![GitHub](https://img.shields.io/badge/GitHub-repository-black)](https://github.com/cherneyivan-cloud/Telegram-Share-add-in-for-Word-and-Excel)
 
-Отправка текущего документа Word / книги Excel как вложения в Telegram Desktop одной кнопкой.
+Отправка текущего документа Word, книги Excel или письма Outlook как вложения в Telegram Desktop одной кнопкой.
 
 **Скачать:** [Releases](https://github.com/cherneyivan-cloud/Telegram-Share-add-in-for-Word-and-Excel/releases) → `TelegramShareAddin.zip` → распаковать → запустить `install.bat` (без прав администратора).
 
@@ -129,14 +129,14 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1 -RemoveFiles
 
 
 
-## Кнопки на ленте (Word и Excel)
+## Кнопки на ленте (Word, Excel, Outlook)
 
 Вкладка называется **«Отправить в Telegram»**. Кнопки:
 
-- **«Отправить в Telegram»** — спрашивает формат (PDF/DOCX или XLSX), сохраняет документ и открывает в Telegram окно **«Переслать…»**; чат выбираете вручную.
+- **«Отправить в Telegram»** — спрашивает формат (PDF/DOCX для Word, PDF/XLSX для Excel; в Outlook — MSG без выбора), сохраняет и открывает в Telegram окно **«Переслать…»**; чат выбираете вручную.
 - **«Отправить в Telegram+сообщение»** — выбор получателя из списка чатов Telegram (или вручную) и текста сообщения, затем автоматическая отправка.
 
-Надстройка устанавливается и для **Word**, и для **Excel** (общий код, два COM-объекта).
+Надстройка устанавливается для **Word**, **Excel** и **Outlook** (общий код, три COM-объекта). В Outlook «документ» — это текущее письмо, оно сохраняется в **.msg** (PDF из Outlook штатно не экспортируется).
 
 Пункт **ПКМ → Отправить → Telegram** работает для любых файлов в Проводнике — `install.ps1` создаёт ярлык `Telegram.exe -sendpath` в папке SendTo.
 

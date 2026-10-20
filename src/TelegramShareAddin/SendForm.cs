@@ -27,6 +27,7 @@ namespace TelegramShareAddin
 
         private readonly Settings _settings;
         private readonly string _nativeLabel;
+        private readonly bool _allowPdf;
         private readonly List<ContactItem> _all = new List<ContactItem>( );
         private readonly HashSet<string> _telegramChats = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
         private readonly HashSet<string> _hiddenChats = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
@@ -52,7 +53,14 @@ namespace TelegramShareAddin
 
         public SendFileFormat Format
         {
-            get { return _formatBox.SelectedIndex == 1 ? SendFileFormat.Docx : SendFileFormat.Pdf; }
+            get
+            {
+                if ( !_allowPdf )
+                {
+                    return SendFileFormat.Docx;
+                }
+                return _formatBox.SelectedIndex == 1 ? SendFileFormat.Docx : SendFileFormat.Pdf;
+            }
         }
 
         public bool RememberContact
@@ -66,10 +74,11 @@ namespace TelegramShareAddin
             get { return _telegramChats.Contains( Contact ); }
         }
 
-        public SendForm( Settings settings , string nativeLabel )
+        public SendForm( Settings settings , string nativeLabel , bool allowPdf )
         {
             _settings = settings ?? new Settings( );
             _nativeLabel = string.IsNullOrEmpty( nativeLabel ) ? "Копия" : nativeLabel;
+            _allowPdf = allowPdf;
 
             Text = "Отправить в Telegram";
             FormBorderStyle = FormBorderStyle.Sizable;
@@ -220,8 +229,16 @@ namespace TelegramShareAddin
                 Width = 536,
                 DropDownStyle = ComboBoxStyle.DropDownList
             };
-            _formatBox.Items.AddRange( new object[ ] { "PDF (рекомендуется)" , _nativeLabel } );
-            _formatBox.SelectedIndex = _settings.LastFormat == "DOCX" ? 1 : 0;
+            if ( _allowPdf )
+            {
+                _formatBox.Items.AddRange( new object[ ] { "PDF (рекомендуется)" , _nativeLabel } );
+                _formatBox.SelectedIndex = _settings.LastFormat == "DOCX" ? 1 : 0;
+            }
+            else
+            {
+                _formatBox.Items.Add( _nativeLabel );
+                _formatBox.SelectedIndex = 0;
+            }
             Controls.Add( _formatBox );
             y += 34;
 
