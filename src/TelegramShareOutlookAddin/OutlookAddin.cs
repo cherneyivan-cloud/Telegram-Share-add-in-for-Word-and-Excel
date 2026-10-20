@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Windows.Forms;
 using Extensibility;
 using Microsoft.Office.Core;
 using Outlook = Microsoft.Office.Interop.Outlook;
@@ -61,7 +63,7 @@ namespace TelegramShareAddin
 
         public string GetCustomUI( string RibbonID )
         {
-            return AddinCore.GetCustomUi( RibbonID );
+            return AddinCore.GetCustomUi( RibbonID , true );
         }
 
         public object GetButtonImage( IRibbonControl control )
@@ -79,6 +81,98 @@ namespace TelegramShareAddin
         {
             EnsureSettings( );
             AddinCore.SendVia( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , false );
+        }
+
+        public void OnSendAttachments( IRibbonControl control )
+        {
+            object item = null;
+            try
+            {
+                AddinCore.Log( "OnSendAttachments: enter" );
+                EnsureSettings( );
+
+                item = GetActiveItem( );
+                if ( item == null )
+                {
+                    MessageBox.Show( NoDocumentMessage , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Information );
+                    return;
+                }
+
+                Outlook.MailItem mail = item as Outlook.MailItem;
+                if ( mail == null )
+                {
+                    MessageBox.Show( "Вложения можно отправить только из письма Outlook." , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Information );
+                    return;
+                }
+
+                Outlook.Attachments attachments = mail.Attachments;
+                if ( attachments == null || attachments.Count == 0 )
+                {
+                    MessageBox.Show( "В текущем письме нет вложений." , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Information );
+                    return;
+                }
+
+                var items = new List<AttachmentsForm.Item>( );
+                for ( int i = 1; i <= attachments.Count; i++ )
+                {
+                    Outlook.Attachment attachment = attachments[ i ];
+                    try
+                    {
+                        items.Add( new AttachmentsForm.Item
+                        {
+                            Index = i ,
+                            Name = attachment.FileName ,
+                            Size = attachment.Size
+                        } );
+                    }
+                    finally
+                    {
+                        try { Marshal.ReleaseComObject( attachment ); } catch { }
+                    }
+                }
+
+                using ( var form = new AttachmentsForm( items ) )
+                {
+                    if ( form.ShowDialog( ) != DialogResult.OK )
+                    {
+                        return;
+                    }
+
+                    var paths = new List<string>( );
+                    foreach ( int index in form.SelectedIndices )
+                    {
+                        Outlook.Attachment attachment = attachments[ index ];
+                        try
+                        {
+                            string path = TelegramSender.NewTempFile( attachment.FileName );
+                            attachment.SaveAsFile( path );
+                            paths.Add( path );
+                        }
+                        finally
+                        {
+                            try { Marshal.ReleaseComObject( attachment ); } catch { }
+                        }
+                    }
+
+                    TelegramSender.CleanupOldTempFiles( );
+                    var sender = new TelegramSender( _settings );
+                    sender.SendWithPickerPreparedFiles( paths );
+                }
+
+                MessageBox.Show( "Вложения переданы в Telegram. Выберите чат в окне «Переслать…» и нажмите «Отправить»." , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Information );
+            }
+            catch ( Exception ex )
+            {
+                AddinCore.Log( "OnSendAttachments ERROR: " + ex.ToString( ) );
+                MessageBox.Show( "Ошибка: " + ex.Message , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Error );
+            }
+            finally
+            {
+                if ( item != null )
+                {
+                    try { Marshal.ReleaseComObject( item ); } catch { }
+                }
+            }
         }
 
         public void OnOpenGitHub( IRibbonControl control )

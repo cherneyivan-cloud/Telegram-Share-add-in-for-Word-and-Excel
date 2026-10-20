@@ -1,34 +1,49 @@
 ﻿namespace TelegramShareAddin
 {
-    /// <summary>Разметка ленты Office, общая для Word и Excel.</summary>
+    /// <summary>Разметка ленты Office, общая для Word, Excel и Outlook.</summary>
     internal static class RibbonDefinition
     {
         public const string GitHubUrl = "https://github.com/cherneyivan-cloud/Telegram-Share-add-in-for-Word-and-Excel";
 
-        public const string Xml =
-            "<customUI xmlns=\"http://schemas.microsoft.com/office/2006/01/customui\">" +
-            "<ribbon>" +
-            "<tabs>" +
-            "<tab id=\"TelegramShareTab\" label=\"Отправить в Telegram\">" +
-            "<group id=\"TelegramShareGroup\" label=\"Отправка документа\">" +
-            "<button id=\"TelegramShareSendViaButton\" label=\"Отправить в Telegram\"" +
-            " size=\"large\" getImage=\"GetButtonImage\" screentip=\"Отправить через Telegram\"" +
-            " supertip=\"Сохраняет документ и открывает в Telegram окно «Переслать…» — выберите чат вручную\"" +
-            " onAction=\"OnSendViaTelegram\"/>" +
-            "<button id=\"TelegramShareButton\" label=\"Отправить в Telegram+сообщение\"" +
-            " size=\"large\" getImage=\"GetButtonImage\" screentip=\"Отправить в Telegram с сообщением\"" +
-            " supertip=\"Сохраняет текущий документ и отправляет его выбранному контакту с подписью\"" +
-            " onAction=\"OnSendButton\"/>" +
-            "</group>" +
-            "<group id=\"TelegramShareLinksGroup\" label=\"Проект\">" +
-            "<button id=\"TelegramShareGitHubButton\" label=\"GitHub\" size=\"large\" getImage=\"GetButtonImage\"" +
-            " screentip=\"Страница проекта на GitHub\"" +
-            " supertip=\"" + GitHubUrl + "\"" +
-            " onAction=\"OnOpenGitHub\"/>" +
-            "</group>" +
-            "</tab>" +
-            "</tabs>" +
-            "</ribbon>" +
-            "</customUI>";
+        // Кнопка «Вложения» нужна только Outlook — в Word/Excel ленте её нет.
+        private const string AttachmentsButton =
+            "<button id=\"TelegramShareAttachmentsButton\" label=\"Вложения\" size=\"large\" getImage=\"GetButtonImage\"" +
+            " screentip=\"Отправить вложения письма\"" +
+            " supertip=\"Выбрать отдельные вложения текущего письма и отправить в Telegram\"" +
+            " onAction=\"OnSendAttachments\"/>";
+
+        public static readonly string Xml = Build( false );
+        public static readonly string OutlookXml = Build( true );
+
+        private static string Build( bool withAttachments )
+        {
+            string attachments = withAttachments ? AttachmentsButton : "";
+
+            return "<customUI xmlns=\"http://schemas.microsoft.com/office/2006/01/customui\">" +
+                   "<ribbon>" +
+                   "<tabs>" +
+                   "<tab id=\"TelegramShareTab\" label=\"Отправить в Telegram\">" +
+                   "<group id=\"TelegramShareGroup\" label=\"Отправка документа\">" +
+                   "<button id=\"TelegramShareSendViaButton\" label=\"Отправить в Telegram\"" +
+                   " size=\"large\" getImage=\"GetButtonImage\" screentip=\"Отправить через Telegram\"" +
+                   " supertip=\"Сохраняет документ и открывает в Telegram окно «Переслать…» — выберите чат вручную\"" +
+                   " onAction=\"OnSendViaTelegram\"/>" +
+                   "<button id=\"TelegramShareButton\" label=\"Отправить в Telegram+сообщение\"" +
+                   " size=\"large\" getImage=\"GetButtonImage\" screentip=\"Отправить в Telegram с сообщением\"" +
+                   " supertip=\"Сохраняет текущий документ и отправляет его выбранному контакту с подписью\"" +
+                   " onAction=\"OnSendButton\"/>" +
+                   attachments +
+                   "</group>" +
+                   "<group id=\"TelegramShareLinksGroup\" label=\"Проект\">" +
+                   "<button id=\"TelegramShareGitHubButton\" label=\"GitHub\" size=\"large\" getImage=\"GetButtonImage\"" +
+                   " screentip=\"Страница проекта на GitHub\"" +
+                   " supertip=\"" + GitHubUrl + "\"" +
+                   " onAction=\"OnOpenGitHub\"/>" +
+                   "</group>" +
+                   "</tab>" +
+                   "</tabs>" +
+                   "</ribbon>" +
+                   "</customUI>";
+        }
     }
 }

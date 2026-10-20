@@ -157,8 +157,24 @@ namespace TelegramShareAddin
         /// <summary>Открыть в Telegram окно «Переслать…» для уже подготовленного файла.</summary>
         public void SendWithPickerPreparedFile( string tempFile )
         {
-            LaunchTelegramSendPath( tempFile );
-            ScheduleDelete( tempFile , TempFileLifetimeMs );
+            SendWithPickerPreparedFiles( new string[ ] { tempFile } );
+        }
+
+        /// <summary>Открыть в Telegram окно «Переслать…» сразу для нескольких файлов.</summary>
+        public void SendWithPickerPreparedFiles( IEnumerable<string> files )
+        {
+            var list = new List<string>( files );
+            if ( list.Count == 0 )
+            {
+                throw new InvalidOperationException( "Нет файлов для отправки." );
+            }
+
+            LaunchTelegramSendPath( list );
+
+            foreach ( string file in list )
+            {
+                ScheduleDelete( file , TempFileLifetimeMs );
+            }
         }
 
         private static void SetFileToClipboard( string filePath )
@@ -257,7 +273,7 @@ namespace TelegramShareAddin
             }
         }
 
-        private static void LaunchTelegramSendPath( string file )
+        private static void LaunchTelegramSendPath( IList<string> files )
         {
             string exe = FindTelegramExe( );
             if ( string.IsNullOrEmpty( exe ) )
@@ -265,9 +281,15 @@ namespace TelegramShareAddin
                 throw new InvalidOperationException( "Не найден Telegram Desktop (Telegram.exe). Установите Telegram или запустите его один раз." );
             }
 
+            var arguments = new StringBuilder( "-sendpath" );
+            foreach ( string file in files )
+            {
+                arguments.Append( " \"" ).Append( file ).Append( '"' );
+            }
+
             try
             {
-                Process.Start( new ProcessStartInfo( exe , "-sendpath \"" + file + "\"" ) { UseShellExecute = false } );
+                Process.Start( new ProcessStartInfo( exe , arguments.ToString( ) ) { UseShellExecute = false } );
             }
             catch ( Exception ex )
             {

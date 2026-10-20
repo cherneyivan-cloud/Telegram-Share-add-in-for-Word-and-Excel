@@ -36,9 +36,41 @@ namespace TelegramShareAddin
             return Draw( true );
         }
 
-        /// <summary>Значок GitHub.</summary>
-        public static Bitmap CreateGitHub( )
+        /// <summary>Значок «скрепка» для отправки вложений.</summary>
+        public static Bitmap CreatePaperclip( )
         {
+            var bmp = new Bitmap( 32 , 32 );
+            using ( var g = Graphics.FromImage( bmp ) )
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.Clear( Color.Transparent );
+
+                using ( var brush = new SolidBrush( Color.FromArgb( 42 , 171 , 238 ) ) )
+                using ( var bg = RoundedRect( new Rectangle( 1 , 1 , 30 , 30 ) , 6 ) )
+                {
+                    g.FillPath( brush , bg );
+                }
+
+                using ( var pen = new Pen( Color.White , 2.4F ) )
+                {
+                    pen.StartCap = LineCap.Round;
+                    pen.EndCap = LineCap.Round;
+
+                    var state = g.Save( );
+                    g.TranslateTransform( 16 , 16 );
+                    g.RotateTransform( -45 );
+                    using ( var clip = RoundedRect( new Rectangle( -5 , -11 , 10 , 19 ) , 5 ) )
+                    {
+                        g.DrawPath( pen , clip );
+                    }
+                    g.Restore( state );
+                }
+            }
+            return bmp;
+        }
+
+        /// <summary>Значок GitHub.</summary>
+        public static Bitmap CreateGitHub( )        {
             var bmp = new Bitmap( 32 , 32 );
             using ( var g = Graphics.FromImage( bmp ) )
             {

@@ -62,7 +62,7 @@ namespace TelegramShareAddin
 
         public string GetCustomUI( string RibbonID )
         {
-            return AddinCore.GetCustomUi( RibbonID );
+            return AddinCore.GetCustomUi( RibbonID , false );
         }
 
         public object GetButtonImage( IRibbonControl control )

@@ -16,15 +16,16 @@ namespace TelegramShareAddin
         private static IPictureDisp _imageRectangular;
         private static IPictureDisp _imageRounded;
         private static IPictureDisp _imageGitHub;
+        private static IPictureDisp _imagePaperclip;
 
-        public static string GetCustomUi( string ribbonId )
+        public static string GetCustomUi( string ribbonId , bool outlook )
         {
             try
             {
                 Log( "GetCustomUI: " + ribbonId );
                 if ( string.IsNullOrEmpty( ribbonId ) || ribbonId.StartsWith( "Microsoft." , StringComparison.OrdinalIgnoreCase ) )
                 {
-                    return RibbonDefinition.Xml;
+                    return outlook ? RibbonDefinition.OutlookXml : RibbonDefinition.Xml;
                 }
                 return null;
             }
@@ -64,6 +65,15 @@ namespace TelegramShareAddin
                         _imageGitHub = PictureConverter.ToPictureDisp( IconFactory.CreateGitHub( ) );
                     }
                     return _imageGitHub;
+                }
+
+                if ( control != null && control.Id == "TelegramShareAttachmentsButton" )
+                {
+                    if ( _imagePaperclip == null )
+                    {
+                        _imagePaperclip = PictureConverter.ToPictureDisp( IconFactory.CreatePaperclip( ) );
+                    }
+                    return _imagePaperclip;
                 }
             }
             catch ( Exception ex )

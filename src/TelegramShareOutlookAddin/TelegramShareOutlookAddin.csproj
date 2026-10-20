@@ -66,6 +66,7 @@
     </COMReference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AttachmentsForm.cs" />
     <Compile Include="OutlookAddin.cs" />
     <Compile Include="OutlookItemSaver.cs" />
     <Compile Include="..\TelegramShareAddin\AddinCore.cs">
