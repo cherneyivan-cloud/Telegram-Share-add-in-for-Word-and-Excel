@@ -12,12 +12,19 @@
             " supertip=\"Выбрать отдельные вложения текущего письма и отправить в Telegram\"" +
             " onAction=\"OnSendAttachments\"/>";
 
+        // Печать — стандартный диалог Outlook (Ctrl+P), где можно выбрать «Microsoft Print to PDF».
+        private const string PrintButton =
+            "<button id=\"TelegramSharePrintButton\" label=\"Печать (PDF)\" size=\"large\" getImage=\"GetButtonImage\"" +
+            " screentip=\"Печать письма (Ctrl+P)\"" +
+            " supertip=\"Открывает стандартный диалог печати Outlook — выберите «Microsoft Print to PDF»\"" +
+            " onAction=\"OnPrintPdf\"/>";
+
         public static readonly string Xml = Build( false );
         public static readonly string OutlookXml = Build( true );
 
         private static string Build( bool withAttachments )
         {
-            string attachments = withAttachments ? AttachmentsButton : "";
+            string attachments = withAttachments ? ( AttachmentsButton + PrintButton ) : "";
 
             return "<customUI xmlns=\"http://schemas.microsoft.com/office/2006/01/customui\">" +
                    "<ribbon>" +

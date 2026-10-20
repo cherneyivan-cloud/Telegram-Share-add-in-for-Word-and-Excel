@@ -1,12 +1,17 @@
 ﻿using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
 namespace TelegramShareAddin
 {
     /// <summary>
-    /// Сохранение письма Outlook во временный .msg.
-    /// PDF из Outlook штатно не экспортируется, поэтому формат всегда MSG.
+    /// Сохранение письма Outlook в .msg.
+    ///
+    /// PDF намеренно не генерируется автоматически: Word/Chrome-автоматизация в этой
+    /// среде ненадёжна (зависает на скрытом Word). Вместо этого в Outlook есть отдельная
+    /// кнопка «Печать (PDF)», открывающая стандартный диалог печати (Ctrl+P), где можно
+    /// выбрать «Microsoft Print to PDF».
     /// </summary>
     internal static class OutlookItemSaver
     {

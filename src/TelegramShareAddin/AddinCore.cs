@@ -17,6 +17,7 @@ namespace TelegramShareAddin
         private static IPictureDisp _imageRounded;
         private static IPictureDisp _imageGitHub;
         private static IPictureDisp _imagePaperclip;
+        private static IPictureDisp _imagePrinter;
 
         public static string GetCustomUi( string ribbonId , bool outlook )
         {
@@ -74,6 +75,15 @@ namespace TelegramShareAddin
                         _imagePaperclip = PictureConverter.ToPictureDisp( IconFactory.CreatePaperclip( ) );
                     }
                     return _imagePaperclip;
+                }
+
+                if ( control != null && control.Id == "TelegramSharePrintButton" )
+                {
+                    if ( _imagePrinter == null )
+                    {
+                        _imagePrinter = PictureConverter.ToPictureDisp( IconFactory.CreatePrinter( ) );
+                    }
+                    return _imagePrinter;
                 }
             }
             catch ( Exception ex )

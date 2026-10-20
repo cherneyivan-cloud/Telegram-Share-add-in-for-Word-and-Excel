@@ -180,6 +180,78 @@ namespace TelegramShareAddin
             AddinCore.OpenGitHub( );
         }
 
+        /// <summary>
+        /// Печать письма стандартным диалогом Outlook (Ctrl+P). Пользователь сам выбирает
+        /// принтер, например «Microsoft Print to PDF», и сохраняет PDF.
+        /// </summary>
+        public void OnPrintPdf( IRibbonControl control )
+        {
+            object item = null;
+            try
+            {
+                AddinCore.Log( "OnPrintPdf: enter" );
+                item = GetActiveItem( );
+                if ( item == null )
+                {
+                    MessageBox.Show( NoDocumentMessage , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Information );
+                    return;
+                }
+
+                Outlook.Application app = _outlookApp;
+                bool invoked = false;
+
+                try
+                {
+                    Outlook.Inspector inspector = app.ActiveInspector( );
+                    if ( inspector != null )
+                    {
+                        inspector.CommandBars.ExecuteMso( "Print" );
+                        invoked = true;
+                    }
+                }
+                catch
+                {
+                }
+
+                if ( !invoked )
+                {
+                    try
+                    {
+                        Outlook.Explorer explorer = app.ActiveExplorer( );
+                        if ( explorer != null )
+                        {
+                            explorer.CommandBars.ExecuteMso( "Print" );
+                            invoked = true;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if ( !invoked )
+                {
+                    Outlook.MailItem mail = item as Outlook.MailItem;
+                    if ( mail != null )
+                    {
+                        mail.PrintOut( );
+                    }
+                }
+            }
+            catch ( Exception ex )
+            {
+                AddinCore.Log( "OnPrintPdf ERROR: " + ex.ToString( ) );
+                MessageBox.Show( "Ошибка: " + ex.Message , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Error );
+            }
+            finally
+            {
+                if ( item != null )
+                {
+                    try { Marshal.ReleaseComObject( item ); } catch { }
+                }
+            }
+        }
+
         // --------------------------------------------------------------
 
         private void EnsureSettings( )

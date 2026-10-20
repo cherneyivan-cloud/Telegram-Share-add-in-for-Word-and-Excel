@@ -69,6 +69,36 @@ namespace TelegramShareAddin
             return bmp;
         }
 
+        /// <summary>Значок принтера для кнопки печати.</summary>
+        public static Bitmap CreatePrinter( )
+        {
+            var bmp = new Bitmap( 32 , 32 );
+            using ( var g = Graphics.FromImage( bmp ) )
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.Clear( Color.Transparent );
+
+                using ( var bg = new SolidBrush( Color.FromArgb( 42 , 171 , 238 ) ) )
+                using ( var bgPath = RoundedRect( new Rectangle( 1 , 1 , 30 , 30 ) , 6 ) )
+                {
+                    g.FillPath( bg , bgPath );
+                }
+
+                using ( var white = new SolidBrush( Color.White ) )
+                {
+                    g.FillRectangle( white , 9 , 7 , 14 , 7 );
+                    g.FillRectangle( white , 6 , 13 , 20 , 9 );
+                    g.FillRectangle( white , 10 , 20 , 12 , 6 );
+                }
+
+                using ( var blue = new SolidBrush( Color.FromArgb( 42 , 171 , 238 ) ) )
+                {
+                    g.FillRectangle( blue , 10 , 16 , 12 , 2 );
+                }
+            }
+            return bmp;
+        }
+
         /// <summary>Значок GitHub.</summary>
         public static Bitmap CreateGitHub( )        {
             var bmp = new Bitmap( 32 , 32 );
