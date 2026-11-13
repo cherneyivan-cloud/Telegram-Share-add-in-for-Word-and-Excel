@@ -18,6 +18,7 @@ namespace TelegramShareAddin
         private static IPictureDisp _imageGitHub;
         private static IPictureDisp _imagePaperclip;
         private static IPictureDisp _imagePrinter;
+        private static IPictureDisp _imageMax;
 
         public static string GetCustomUi( string ribbonId , bool outlook )
         {
@@ -85,6 +86,15 @@ namespace TelegramShareAddin
                     }
                     return _imagePrinter;
                 }
+
+                if ( control != null && control.Id == "TelegramShareMaxButton" )
+                {
+                    if ( _imageMax == null )
+                    {
+                        _imageMax = PictureConverter.ToPictureDisp( IconFactory.CreateMax( ) );
+                    }
+                    return _imageMax;
+                }
             }
             catch ( Exception ex )
             {
@@ -93,24 +103,28 @@ namespace TelegramShareAddin
             return null;
         }
 
-        public static void SendMessage( Settings settings , Func<bool> hasDocument , Func<SendFileFormat,string> saveDocument , string noDocumentMessage , string nativeLabel , bool allowPdf )
+        public static void SendMessage( Settings settings , Func<bool> hasDocument , Func<SendFileFormat,string> saveDocument , string noDocumentMessage , string nativeLabel , bool allowPdf , Messenger defaultMessenger )
         {
             try
             {
-                Log( "OnSendButton: enter" );
+                Log( "OnSendButton: enter, messenger = " + defaultMessenger );
 
                 if ( !hasDocument( ) )
                 {
-                    MessageBox.Show( noDocumentMessage , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Information );
+                    MessageBox.Show( noDocumentMessage , "Отправить сообщение" , MessageBoxButtons.OK , MessageBoxIcon.Information );
                     return;
                 }
 
-                using ( var form = new SendForm( settings , nativeLabel , allowPdf ) )
+                Messenger messenger;
+
+                using ( var form = new SendForm( settings , nativeLabel , allowPdf , defaultMessenger ) )
                 {
                     if ( form.ShowDialog( ) != DialogResult.OK )
                     {
                         return;
                     }
+
+                    messenger = form.Messenger;
 
                     settings.RememberContact = form.RememberContact;
                     if ( settings.RememberContact )
@@ -118,21 +132,30 @@ namespace TelegramShareAddin
                         settings.RememberContactName( form.Contact );
                     }
                     settings.LastFormat = form.Format == SendFileFormat.Docx ? "DOCX" : "PDF";
+                    settings.LastMessenger = messenger == Messenger.Max ? "MAX" : "Telegram";
                     settings.Save( );
 
                     Cursor.Current = Cursors.WaitCursor;
                     try
                     {
                         string tempFile = saveDocument( form.Format );
-                        var options = new TelegramSendOptions
+                        var options = new SendOptions
                         {
                             Contact = form.Contact ,
                             Message = form.Message ,
                             Format = form.Format ,
+                            Messenger = messenger ,
                             OpenByChatName = form.OpenByChatName
                         };
-                        var sender = new TelegramSender( settings );
-                        sender.SendPreparedFile( options , tempFile );
+
+                        if ( messenger == Messenger.Max )
+                        {
+                            new MaxSender( settings ).SendPreparedFile( options , tempFile );
+                        }
+                        else
+                        {
+                            new TelegramSender( settings ).SendPreparedFile( options , tempFile );
+                        }
                     }
                     finally
                     {
@@ -140,12 +163,13 @@ namespace TelegramShareAddin
                     }
                 }
 
-                MessageBox.Show( "Документ отправлен в Telegram." , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Information );
+                string name = messenger == Messenger.Max ? "MAX" : "Telegram";
+                MessageBox.Show( "Документ отправлен в " + name + "." , "Отправить сообщение" , MessageBoxButtons.OK , MessageBoxIcon.Information );
             }
             catch ( Exception ex )
             {
                 Log( "OnSendButton ERROR: " + ex.ToString( ) );
-                MessageBox.Show( "Ошибка: " + ex.Message , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Error );
+                MessageBox.Show( "Ошибка: " + ex.Message , "Отправить сообщение" , MessageBoxButtons.OK , MessageBoxIcon.Error );
             }
         }
 

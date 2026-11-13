@@ -8,9 +8,9 @@ using System.Windows.Forms;
 namespace TelegramShareAddin
 {
     /// <summary>
-    /// Диалог отправки: список контактов (сохранённые + из Telegram) с фильтром,
+    /// Диалог отправки: мессенджер (Telegram/MAX), список чатов с фильтром,
     /// выбор мышью, поле контакта, сообщение и формат файла.
-    /// Групповые чаты и каналы отображаются курсивом.
+    /// Групповые чаты Telegram отображаются курсивом.
     /// </summary>
     public sealed class SendForm : Form
     {
@@ -29,9 +29,10 @@ namespace TelegramShareAddin
         private readonly string _nativeLabel;
         private readonly bool _allowPdf;
         private readonly List<ContactItem> _all = new List<ContactItem>( );
-        private readonly HashSet<string> _telegramChats = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
+        private readonly HashSet<string> _chatNames = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
         private readonly HashSet<string> _hiddenChats = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
 
+        private ComboBox _messengerBox;
         private TextBox _searchBox;
         private ListBox _contactsList;
         private TextBox _contactBox;
@@ -39,6 +40,10 @@ namespace TelegramShareAddin
         private ComboBox _formatBox;
         private CheckBox _rememberCheckBox;
         private Label _statusLabel;
+        private Label _contactsLabel;
+        private Label _contactLabel;
+        private Label _hintLabel;
+        private Button _refreshButton;
         private Font _italicFont;
 
         public string Contact
@@ -49,6 +54,11 @@ namespace TelegramShareAddin
         public string Message
         {
             get { return _messageBox.Text; }
+        }
+
+        public Messenger Messenger
+        {
+            get { return _messengerBox.SelectedIndex == 1 ? Messenger.Max : Messenger.Telegram; }
         }
 
         public SendFileFormat Format
@@ -68,42 +78,73 @@ namespace TelegramShareAddin
             get { return _rememberCheckBox.Checked; }
         }
 
-        /// <summary>true — контакт совпадает с чатом из списка Telegram (открываем чат кликом(.</summary>
+        /// <summary>true — контакт совпадает с чатом из загруженного списка (открываем чат кликом(.</summary>
         public bool OpenByChatName
         {
-            get { return _telegramChats.Contains( Contact ); }
+            get { return _chatNames.Contains( Contact ); }
         }
 
-        public SendForm( Settings settings , string nativeLabel , bool allowPdf )
+        public SendForm( Settings settings , string nativeLabel , bool allowPdf , Messenger defaultMessenger )
         {
             _settings = settings ?? new Settings( );
             _nativeLabel = string.IsNullOrEmpty( nativeLabel ) ? "Копия" : nativeLabel;
             _allowPdf = allowPdf;
 
-            Text = "Отправить в Telegram";
+            Text = "Отправить сообщение";
             FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size( 560 , 520 );
-            MinimumSize = new Size( 576 , 560 );
+            ClientSize = new Size( 560 , 572 );
+            MinimumSize = new Size( 576 , 620 );
             Font = new Font( "Segoe UI" , 9F );
             AutoScaleMode = AutoScaleMode.None;
 
             _italicFont = new Font( Font.FontFamily , Font.Size , FontStyle.Italic );
 
-            InitializeControls( );
+            InitializeControls( defaultMessenger );
 
             RebuildAll( );
-            StartTelegramLoad( );
+            StartChatLoad( );
         }
 
-        private void InitializeControls( )
+        private void InitializeControls( Messenger defaultMessenger )
         {
             int y = 12;
 
-            AddLabel( "Контакты — выберите кликом; курсив — групповые чаты:" , 12 , y );
+            var messengerLabel = new Label
+            {
+                Left = 12,
+                Top = y + 3,
+                Width = 92,
+                Height = 18,
+                Text = "Мессенджер:"
+            };
+            Controls.Add( messengerLabel );
+
+            _messengerBox = new ComboBox
+            {
+                Left = 108,
+                Top = y,
+                Width = 220,
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            _messengerBox.Items.AddRange( new object[ ] { "Telegram" , "MAX" } );
+            _messengerBox.SelectedIndex = defaultMessenger == Messenger.Max ? 1 : 0;
+            _messengerBox.SelectedIndexChanged += OnMessengerChanged;
+            Controls.Add( _messengerBox );
+            y += 36;
+
+            _contactsLabel = new Label
+            {
+                Left = 12,
+                Top = y,
+                Width = 536,
+                Height = 18,
+                Text = "Контакты — выберите кликом; курсив — групповые чаты:"
+            };
+            Controls.Add( _contactsLabel );
             y += 20;
 
             _searchBox = new TextBox
@@ -142,7 +183,7 @@ namespace TelegramShareAddin
             removeButton.Click += OnRemoveContact;
             Controls.Add( removeButton );
 
-            var refreshButton = new Button
+            _refreshButton = new Button
             {
                 Left = 190,
                 Top = y,
@@ -150,8 +191,8 @@ namespace TelegramShareAddin
                 Height = 26,
                 Text = "Обновить из Telegram"
             };
-            refreshButton.Click += OnRefreshTelegram;
-            Controls.Add( refreshButton );
+            _refreshButton.Click += OnRefreshChats;
+            Controls.Add( _refreshButton );
 
             _statusLabel = new Label
             {
@@ -165,7 +206,15 @@ namespace TelegramShareAddin
             Controls.Add( _statusLabel );
             y += 40;
 
-            AddLabel( "Контакт — username, +номер телефона или числовой ID:" , 12 , y );
+            _contactLabel = new Label
+            {
+                Left = 12,
+                Top = y,
+                Width = 536,
+                Height = 18,
+                Text = "Контакт — username, +номер телефона или числовой ID:"
+            };
+            Controls.Add( _contactLabel );
             y += 20;
 
             _contactBox = new TextBox
@@ -190,7 +239,7 @@ namespace TelegramShareAddin
             Controls.Add( addButton );
             y += 30;
 
-            var hint = new Label
+            _hintLabel = new Label
             {
                 Left = 12,
                 Top = y,
@@ -199,8 +248,8 @@ namespace TelegramShareAddin
                 ForeColor = SystemColors.GrayText,
                 Text = "Примеры: @durov, +79123456789 или 123456789"
             };
-            hint.Font = new Font( "Segoe UI" , 8F );
-            Controls.Add( hint );
+            _hintLabel.Font = new Font( "Segoe UI" , 8F );
+            Controls.Add( _hintLabel );
             y += 26;
 
             AddLabel( "Сообщение — необязательно:" , 12 , y );
@@ -278,6 +327,8 @@ namespace TelegramShareAddin
 
             AcceptButton = okButton;
             CancelButton = cancelButton;
+
+            UpdateMessengerTexts( );
         }
 
         private const int EM_SETCUEBANNER = 0x1501;
@@ -298,30 +349,71 @@ namespace TelegramShareAddin
         }
 
         // --------------------------------------------------------------
-        // Загрузка чатов из Telegram
+        // Мессенджер
         // --------------------------------------------------------------
 
-        private void StartTelegramLoad( )
+        private void OnMessengerChanged( object sender , EventArgs e )
         {
-            _statusLabel.Text = "Загрузка из Telegram...";
+            _chatInfos.Clear( );
+            _chatNames.Clear( );
+            UpdateMessengerTexts( );
+            RebuildAll( );
+            StartChatLoad( );
+        }
 
-            var thread = new Thread( LoadTelegramChatsWorker );
+        private void UpdateMessengerTexts( )
+        {
+            bool max = Messenger == Messenger.Max;
+
+            _contactsLabel.Text = max
+                ? "Чаты MAX — выберите кликом:"
+                : "Контакты — выберите кликом; курсив — групповые чаты:";
+
+            _refreshButton.Text = max ? "Обновить из MAX" : "Обновить из Telegram";
+
+            _contactLabel.Text = max
+                ? "Контакт — имя чата из списка или username:"
+                : "Контакт — username, +номер телефона или числовой ID:";
+
+            _hintLabel.Text = max
+                ? "Примеры: Иван Петров или support"
+                : "Примеры: @durov, +79123456789 или 123456789";
+        }
+
+        // --------------------------------------------------------------
+        // Загрузка чатов
+        // --------------------------------------------------------------
+
+        private void StartChatLoad( )
+        {
+            Messenger messenger = Messenger;
+
+            _statusLabel.Text = messenger == Messenger.Max
+                ? "Загрузка из MAX..."
+                : "Загрузка из Telegram...";
+
+            var thread = new Thread( new ThreadStart( delegate { LoadChatsWorker( messenger ); } ) );
             thread.IsBackground = true;
             thread.SetApartmentState( ApartmentState.STA );
             thread.Start( );
         }
 
-        private void LoadTelegramChatsWorker( )
+        private void LoadChatsWorker( Messenger messenger )
         {
-            var chats = new List<TelegramChatInfo>( );
+            var chats = new List<MessengerChatInfo>( );
             bool running = false;
             try
             {
-                int pid = TelegramSender.GetTelegramProcessId( );
+                int pid = messenger == Messenger.Max
+                    ? MaxSender.GetProcessId( )
+                    : TelegramSender.GetTelegramProcessId( );
+
                 if ( pid != 0 )
                 {
                     running = true;
-                    chats = TelegramUi.GetChats( pid );
+                    chats = messenger == Messenger.Max
+                        ? MaxUi.GetChats( pid )
+                        : TelegramUi.GetChats( pid );
                 }
             }
             catch
@@ -332,7 +424,7 @@ namespace TelegramShareAddin
             {
                 if ( !IsDisposed )
                 {
-                    BeginInvoke( (Action)delegate { ApplyTelegramChats( chats , running ); } );
+                    BeginInvoke( (Action)delegate { ApplyChats( chats , running , messenger ); } );
                 }
             }
             catch
@@ -340,30 +432,37 @@ namespace TelegramShareAddin
             }
         }
 
-        private void ApplyTelegramChats( List<TelegramChatInfo> chats , bool running )
+        private void ApplyChats( List<MessengerChatInfo> chats , bool running , Messenger messenger )
         {
-            _chatInfos = chats;
-            _telegramChats.Clear( );
+            if ( messenger != Messenger )
+            {
+                return;
+            }
 
-            foreach ( TelegramChatInfo c in chats )
+            _chatInfos = chats;
+            _chatNames.Clear( );
+
+            foreach ( MessengerChatInfo c in chats )
             {
                 if ( !string.IsNullOrEmpty( c.Name ) )
                 {
-                    _telegramChats.Add( c.Name );
+                    _chatNames.Add( c.Name );
                 }
             }
 
+            string name = messenger == Messenger.Max ? "MAX" : "Telegram";
+
             if ( chats.Count > 0 )
             {
-                _statusLabel.Text = "Из Telegram: " + chats.Count;
+                _statusLabel.Text = "Из " + name + ": " + chats.Count;
             }
             else if ( !running )
             {
-                _statusLabel.Text = "Telegram не запущен";
+                _statusLabel.Text = name + " не запущен";
             }
             else
             {
-                _statusLabel.Text = "Список из Telegram пуст";
+                _statusLabel.Text = "Список из " + name + " пуст";
             }
 
             RebuildAll( );
@@ -388,7 +487,7 @@ namespace TelegramShareAddin
                 }
             }
 
-            foreach ( string c in _telegramChats )
+            foreach ( string c in _chatNames )
             {
                 if ( _hiddenChats.Contains( c ) )
                 {
@@ -396,7 +495,7 @@ namespace TelegramShareAddin
                 }
 
                 bool isGroup = false;
-                TelegramChatInfo info = _chatInfo( c );
+                MessengerChatInfo info = _chatInfo( c );
                 if ( info != null )
                 {
                     isGroup = info.IsGroup;
@@ -418,11 +517,11 @@ namespace TelegramShareAddin
             ApplyFilter( keep );
         }
 
-        private List<TelegramChatInfo> _chatInfos = new List<TelegramChatInfo>( );
+        private List<MessengerChatInfo> _chatInfos = new List<MessengerChatInfo>( );
 
-        private TelegramChatInfo _chatInfo( string name )
+        private MessengerChatInfo _chatInfo( string name )
         {
-            foreach ( TelegramChatInfo c in _chatInfos )
+            foreach ( MessengerChatInfo c in _chatInfos )
             {
                 if ( string.Equals( c.Name , name , StringComparison.OrdinalIgnoreCase ) )
                 {
@@ -521,7 +620,7 @@ namespace TelegramShareAddin
             string c = _contactBox.Text.Trim( ).TrimStart( '@' );
             if ( string.IsNullOrEmpty( c ) )
             {
-                MessageBox.Show( "Введите контакт, чтобы добавить его в список." , "Telegram Share" , MessageBoxButtons.OK , MessageBoxIcon.Information );
+                MessageBox.Show( "Введите контакт, чтобы добавить его в список." , "Отправить сообщение" , MessageBoxButtons.OK , MessageBoxIcon.Information );
                 return;
             }
 
@@ -553,9 +652,9 @@ namespace TelegramShareAddin
             RebuildAll( );
         }
 
-        private void OnRefreshTelegram( object sender , EventArgs e )
+        private void OnRefreshChats( object sender , EventArgs e )
         {
-            StartTelegramLoad( );
+            StartChatLoad( );
         }
 
         private void AddLabel( string text , int left , int top )
@@ -575,7 +674,7 @@ namespace TelegramShareAddin
         {
             if ( string.IsNullOrWhiteSpace( Contact ) )
             {
-                MessageBox.Show( "Укажите контакт: выберите из списка или введите вручную." , "Telegram Share" , MessageBoxButtons.OK , MessageBoxIcon.Information );
+                MessageBox.Show( "Укажите контакт: выберите из списка или введите вручную." , "Отправить сообщение" , MessageBoxButtons.OK , MessageBoxIcon.Information );
                 return;
             }
 

@@ -73,7 +73,13 @@ namespace TelegramShareAddin
         public void OnSendButton( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendMessage( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true );
+            AddinCore.SendMessage( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true , Messenger.Telegram );
+        }
+
+        public void OnSendMax( IRibbonControl control )
+        {
+            EnsureSettings( );
+            AddinCore.SendMessage( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true , Messenger.Max );
         }
 
         public void OnSendViaTelegram( IRibbonControl control )

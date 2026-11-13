@@ -1,20 +1,21 @@
 ﻿# Установка Telegram Share для Word, Excel и Outlook
 
 Надстройки позволяют отправить текущий документ Word, книгу Excel или письмо Outlook
-в Telegram Desktop.
+в **Telegram Desktop** или **MAX**.
 
 ## Требования
 
 - Windows 10/11 (x64)
 - Microsoft Word, Excel и/или Outlook **64-бит** (Office 2016/2019/2021/365, включая LTSC)
 - .NET Framework 4.8 (входит в состав Windows)
-- Telegram Desktop, запущенный и авторизованный
+- Telegram Desktop, запущенный и авторизованный (для Telegram)
+- MAX для Windows, запущенный и авторизованный (для MAX)
 
 ## Быстрая установка (без прав администратора)
 
 1. Распакуйте архив `TelegramShareAddin.zip` в любую папку.
 2. Запустите **`install.bat`** двойным щелчком. **Права администратора не требуются.**
-3. Перезапустите Word, Excel и Outlook. На ленте появится вкладка **«Отправить в Telegram»**.
+3. Перезапустите Word, Excel и Outlook. На ленте появится вкладка **«Отправить»**.
 4. Проверка установки: **`check_install.bat`**.
 5. Удаление: **`uninstall.bat`** (при желании удалить и файлы: `uninstall.bat -RemoveFiles`).
 
@@ -30,14 +31,19 @@
 
 ## Использование
 
-Вкладка **«Отправить в Telegram»** на ленте Word/Excel/Outlook:
+Вкладка **«Отправить»** на ленте Word/Excel/Outlook:
 
 - **«Отправить в Telegram»** — спрашивает формат (PDF/DOCX для Word, PDF/XLSX для Excel;
   в Outlook — MSG без выбора), сохраняет и открывает в Telegram окно **«Переслать…»** —
   чат выбираете вручную.
 - **«Отправить в Telegram+сообщение»** — выбор получателя из списка чатов Telegram (или вручную) и текст сообщения, затем автоматическая отправка.
+- **«Отправить в MAX»** — тот же диалог с чатами MAX: выбираете чат или вводите username, добавляете сообщение; файл отправляется автоматически.
 - **«Вложения»** (только Outlook) — выбор отдельных вложений текущего письма и отправка выбранных файлов в Telegram через окно «Переслать…» (можно несколько сразу).
 - **«Печать (PDF)»** (только Outlook) — открывает стандартный диалог печати Outlook (Ctrl+P); выберите «Microsoft Print to PDF», чтобы сохранить письмо в PDF.
+
+В диалоге отправки можно переключить **Мессенджер** (Telegram/MAX) — список чатов подгрузится из выбранного приложения.
+
+После сохранения **полный путь к файлу копируется в буфер обмена** (текстом). В мессенджере `Ctrl+V` вставляет сам файл.
 
 В Outlook отправляется **текущее письмо** (выделенное или открытое), сохранённое в **.msg**. PDF делается кнопкой **«Печать (PDF)»** через стандартный диалог печати Outlook (Ctrl+P) и принтер «Microsoft Print to PDF».
 
@@ -53,8 +59,9 @@
    - `src\TelegramShareAddin` — надстройка для Word (выход: `TelegramShareAddin.dll`);
    - `src\TelegramShareExcelAddin` — надстройка для Excel (выход: `TelegramShareExcel.dll`);
    - `src\TelegramShareOutlookAddin` — надстройка для Outlook (выход: `TelegramShareOutlook.dll`);
-   - общий код (`AddinCore.cs`, `TelegramSender.cs`, `SendForm.cs`, `Settings.cs`,
-     `FormatForm.cs`, `Icons.cs`, `RibbonDefinition.cs`) используется всеми проектами.
+   - общий код (`AddinCore.cs`, `TelegramSender.cs`, `MaxSender.cs`, `ClipboardHelper.cs`,
+     `SendForm.cs`, `Settings.cs`, `FormatForm.cs`, `Icons.cs`, `RibbonDefinition.cs`)
+     используется всеми проектами.
 4. Сборка переносимого пакета:
 
 ```powershell
@@ -92,4 +99,5 @@ gh repo create telegram-share-addin --public --source . --push
 - **Ошибки при работе**: лог `%APPDATA%\TelegramShareAddin\addin.log`.
 - **DOCX/XLSX**: если `SaveCopyAs` недоступен, надстройка копирует сохранённый файл — сохраните документ перед отправкой.
 - **Скрипты**: сохраняйте `.ps1` в **UTF-8 с BOM**, иначе Windows PowerShell 5.1 испортит кириллицу.
-- **PDF/DOCX/XLSX** экспортируются во временный файл, который удаляется через 10 минут после отправки.
+- **MAX**: если чат не открылся, нажмите «Обновить из MAX» и выберите чат из списка; для username используется `max://max.ru/<username>`.
+- **PDF/DOCX/XLSX** экспортируются во временный файл в `%TEMP%\TelegramShare`; старые файлы вычищаются при следующих отправках (старше суток).

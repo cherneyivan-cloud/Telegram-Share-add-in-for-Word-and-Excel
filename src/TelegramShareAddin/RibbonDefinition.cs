@@ -12,6 +12,12 @@
             " supertip=\"Выбрать отдельные вложения текущего письма и отправить в Telegram\"" +
             " onAction=\"OnSendAttachments\"/>";
 
+        private const string MaxButton =
+            "<button id=\"TelegramShareMaxButton\" label=\"Отправить в MAX\" size=\"large\" getImage=\"GetButtonImage\"" +
+            " screentip=\"Отправить в MAX\"" +
+            " supertip=\"Сохраняет документ и отправляет его выбранному чату MAX с подписью\"" +
+            " onAction=\"OnSendMax\"/>";
+
         // Печать — стандартный диалог Outlook (Ctrl+P), где можно выбрать «Microsoft Print to PDF».
         private const string PrintButton =
             "<button id=\"TelegramSharePrintButton\" label=\"Печать (PDF)\" size=\"large\" getImage=\"GetButtonImage\"" +
@@ -29,8 +35,8 @@
             return "<customUI xmlns=\"http://schemas.microsoft.com/office/2006/01/customui\">" +
                    "<ribbon>" +
                    "<tabs>" +
-                   "<tab id=\"TelegramShareTab\" label=\"Отправить в Telegram\">" +
-                   "<group id=\"TelegramShareGroup\" label=\"Отправка документа\">" +
+                   "<tab id=\"TelegramShareTab\" label=\"Отправить\">" +
+                   "<group id=\"TelegramShareGroup\" label=\"Telegram\">" +
                    "<button id=\"TelegramShareSendViaButton\" label=\"Отправить в Telegram\"" +
                    " size=\"large\" getImage=\"GetButtonImage\" screentip=\"Отправить через Telegram\"" +
                    " supertip=\"Сохраняет документ и открывает в Telegram окно «Переслать…» — выберите чат вручную\"" +
@@ -40,6 +46,9 @@
                    " supertip=\"Сохраняет текущий документ и отправляет его выбранному контакту с подписью\"" +
                    " onAction=\"OnSendButton\"/>" +
                    attachments +
+                   "</group>" +
+                   "<group id=\"TelegramShareMaxGroup\" label=\"MAX\">" +
+                   MaxButton +
                    "</group>" +
                    "<group id=\"TelegramShareLinksGroup\" label=\"Проект\">" +
                    "<button id=\"TelegramShareGitHubButton\" label=\"GitHub\" size=\"large\" getImage=\"GetButtonImage\"" +

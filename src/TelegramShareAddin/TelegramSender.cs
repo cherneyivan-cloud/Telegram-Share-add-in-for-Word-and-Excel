@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -19,19 +18,27 @@ namespace TelegramShareAddin
         Docx = 1
     }
 
+    /// <summary>Мессенджер, в который отправляется файл.</summary>
+    public enum Messenger
+    {
+        Telegram = 0,
+        Max = 1
+    }
+
     /// <summary>Параметры отправки.</summary>
-    public class TelegramSendOptions
+    public class SendOptions
     {
         public string Contact { get; set; }
         public string Message { get; set; }
         public SendFileFormat Format { get; set; }
+        public Messenger Messenger { get; set; }
 
-        /// <summary>true — контакт выбран из списка чатов Telegram (открываем чат кликом(.</summary>
+        /// <summary>true — контакт выбран из списка чатов (открываем чат кликом(.</summary>
         public bool OpenByChatName { get; set; }
     }
 
-    /// <summary>Информация о чате Telegram.</summary>
-    public class TelegramChatInfo
+    /// <summary>Информация о чате мессенджера.</summary>
+    public class MessengerChatInfo
     {
         public string Name { get; set; }
         public string Type { get; set; }
@@ -59,7 +66,6 @@ namespace TelegramShareAddin
     public class TelegramSender
     {
         private const int SW_RESTORE = 9;
-        private const int TempFileLifetimeMs = 10 * 60 * 1000;
 
         private readonly Settings _settings;
 
@@ -125,32 +131,28 @@ namespace TelegramShareAddin
         }
 
         /// <summary>Отправить уже подготовленный файл выбранному контакту (автоматически(.</summary>
-        public void SendPreparedFile( TelegramSendOptions options , string tempFile )
+        public void SendPreparedFile( SendOptions options , string tempFile )
         {
             if ( string.IsNullOrWhiteSpace( options.Contact ) )
             {
                 throw new ArgumentException( "Не указан контакт." , "Contact" );
             }
 
-            IDataObject savedClipboard = null;
             try
             {
-                try
-                {
-                    savedClipboard = Clipboard.GetDataObject( );
-                }
-                catch
-                {
-                    savedClipboard = null;
-                }
-
-                SetFileToClipboard( tempFile );
+                ClipboardHelper.SetFileAndPath( tempFile );
                 OpenChatAndSend( options );
-                ScheduleDelete( tempFile , TempFileLifetimeMs );
             }
             finally
             {
-                RestoreClipboard( savedClipboard );
+                // После сохранения полный путь к файлу остаётся в буфере обмена.
+                try
+                {
+                    ClipboardHelper.SetText( tempFile );
+                }
+                catch
+                {
+                }
             }
         }
 
@@ -171,28 +173,17 @@ namespace TelegramShareAddin
 
             LaunchTelegramSendPath( list );
 
-            foreach ( string file in list )
-            {
-                ScheduleDelete( file , TempFileLifetimeMs );
-            }
-        }
-
-        private static void SetFileToClipboard( string filePath )
-        {
-            var files = new StringCollection( );
-            files.Add( filePath );
-
+            // После сохранения полный путь к файлу остаётся в буфере обмена.
             try
             {
-                Clipboard.SetFileDropList( files );
+                ClipboardHelper.SetText( string.Join( Environment.NewLine , list ) );
             }
-            catch ( ExternalException ex )
+            catch
             {
-                throw new InvalidOperationException( "Не удалось поместить файл в буфер обмена: " + ex.Message , ex );
             }
         }
 
-        private void OpenChatAndSend( TelegramSendOptions options )
+        private void OpenChatAndSend( SendOptions options )
         {
             int telegramPid;
 
@@ -427,42 +418,6 @@ namespace TelegramShareAddin
             return sb.ToString( );
         }
 
-        private static void RestoreClipboard( IDataObject saved )
-        {
-            try
-            {
-                if ( saved != null )
-                {
-                    Clipboard.SetDataObject( saved , true );
-                }
-                else
-                {
-                    Clipboard.Clear( );
-                }
-            }
-            catch
-            {
-            }
-        }
-
-        private static void ScheduleDelete( string path , int delayMs )
-        {
-            ThreadPool.QueueUserWorkItem( delegate
-            {
-                try
-                {
-                    Thread.Sleep( delayMs );
-                    if ( File.Exists( path ) )
-                    {
-                        File.Delete( path );
-                    }
-                }
-                catch
-                {
-                }
-            } );
-        }
-
         [DllImport( "user32.dll" )]
         private static extern bool SetForegroundWindow( IntPtr hWnd );
 
@@ -486,9 +441,9 @@ namespace TelegramShareAddin
             public string OwnName;
         }
 
-        public static List<TelegramChatInfo> GetChats( int processId )
+        public static List<MessengerChatInfo> GetChats( int processId )
         {
-            var result = new List<TelegramChatInfo>( );
+            var result = new List<MessengerChatInfo>( );
             if ( processId == 0 )
             {
                 return result;
@@ -515,7 +470,7 @@ namespace TelegramShareAddin
                 }
                 if ( seen.Add( e.Name ) )
                 {
-                    result.Add( new TelegramChatInfo { Name = e.Name , Type = e.Type } );
+                    result.Add( new MessengerChatInfo { Name = e.Name , Type = e.Type } );
                 }
             }
 

@@ -70,8 +70,10 @@
   <ItemGroup>
     <Compile Include="Addin.cs" />
     <Compile Include="AddinCore.cs" />
+    <Compile Include="ClipboardHelper.cs" />
     <Compile Include="FormatForm.cs" />
     <Compile Include="Icons.cs" />
+    <Compile Include="MaxSender.cs" />
     <Compile Include="RibbonDefinition.cs" />
     <Compile Include="SendForm.cs" />
     <Compile Include="Settings.cs" />

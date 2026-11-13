@@ -99,6 +99,35 @@ namespace TelegramShareAddin
             return bmp;
         }
 
+        /// <summary>Значок MAX.</summary>
+        public static Bitmap CreateMax( )
+        {
+            var bmp = new Bitmap( 32 , 32 );
+            using ( var g = Graphics.FromImage( bmp ) )
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.Clear( Color.Transparent );
+
+                using ( var brush = new SolidBrush( Color.FromArgb( 108 , 92 , 231 ) ) )
+                using ( var path = RoundedRect( new Rectangle( 1 , 1 , 30 , 30 ) , 8 ) )
+                {
+                    g.FillPath( brush , path );
+                }
+
+                using ( var white = new SolidBrush( Color.White ) )
+                using ( var font = new System.Drawing.Font( "Segoe UI" , 15F , System.Drawing.FontStyle.Bold ) )
+                {
+                    var sf = new StringFormat
+                    {
+                        Alignment = StringAlignment.Center ,
+                        LineAlignment = StringAlignment.Center
+                    };
+                    g.DrawString( "M" , font , white , new RectangleF( 1 , 0 , 30 , 32 ) , sf );
+                }
+            }
+            return bmp;
+        }
+
         /// <summary>Значок GitHub.</summary>
         public static Bitmap CreateGitHub( )        {
             var bmp = new Bitmap( 32 , 32 );

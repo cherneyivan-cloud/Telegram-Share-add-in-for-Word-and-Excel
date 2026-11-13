@@ -34,6 +34,9 @@ namespace TelegramShareAddin
         /// <summary>Последний выбранный формат: "PDF" или "DOCX".</summary>
         public string LastFormat { get; set; } = "PDF";
 
+        /// <summary>Последний выбранный мессенджер: "Telegram" или "MAX".</summary>
+        public string LastMessenger { get; set; } = "Telegram";
+
         /// <summary>Задержка после открытия чата Telegram перед вставкой файла, мс.</summary>
         public int ChatOpenDelayMs { get; set; } = 2500;
 
