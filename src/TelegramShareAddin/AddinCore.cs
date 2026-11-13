@@ -163,8 +163,8 @@ namespace TelegramShareAddin
                     }
                 }
 
-                string name = messenger == Messenger.Max ? "MAX" : "Telegram";
-                MessageBox.Show( "Документ отправлен в " + name + "." , "Отправить сообщение" , MessageBoxButtons.OK , MessageBoxIcon.Information );
+                // Без модального подтверждения: результат виден в самом мессенджере.
+                Log( "Отправлено: " + messenger );
             }
             catch ( Exception ex )
             {
@@ -215,7 +215,8 @@ namespace TelegramShareAddin
                     Cursor.Current = Cursors.Default;
                 }
 
-                MessageBox.Show( "Документ передан в Telegram. Выберите чат в окне «Переслать…» и нажмите «Отправить»." , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Information );
+                // Без модального подтверждения: окно «Переслать…» открыто в Telegram.
+                Log( "Передано в Telegram (окно «Переслать…»)" );
             }
             catch ( Exception ex )
             {

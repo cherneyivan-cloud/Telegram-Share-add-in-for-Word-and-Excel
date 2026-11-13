@@ -372,11 +372,11 @@ namespace TelegramShareAddin
             _refreshButton.Text = max ? "Обновить из MAX" : "Обновить из Telegram";
 
             _contactLabel.Text = max
-                ? "Контакт — имя чата из списка или username:"
+                ? "Контакт — имя чата из списка или @username:"
                 : "Контакт — username, +номер телефона или числовой ID:";
 
             _hintLabel.Text = max
-                ? "Примеры: Иван Петров или support"
+                ? "Примеры: Иван Петров или @support"
                 : "Примеры: @durov, +79123456789 или 123456789";
         }
 

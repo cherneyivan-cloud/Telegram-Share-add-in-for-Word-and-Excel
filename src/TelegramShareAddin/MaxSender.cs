@@ -58,7 +58,10 @@ namespace TelegramShareAddin
                     opened = MaxUi.OpenChat( pid , contact , 8000 );
                 }
 
-                if ( !opened )
+                // Ссылку max://max.ru/<username> используем только для явно указанного
+                // username (начинается с «@»). Иначе MAX открывает страницу
+                // «Ссылка устарела или не работает» на произвольный текст.
+                if ( !opened && contact.StartsWith( "@" , StringComparison.Ordinal ) )
                 {
                     string username = MaxUi.NormalizeUsername( contact );
                     if ( username != null && MaxUi.OpenByUsername( username ) )
@@ -79,7 +82,8 @@ namespace TelegramShareAddin
                 if ( !opened )
                 {
                     throw new InvalidOperationException(
-                        "Не удалось открыть чат «" + contact + "» в MAX. Откройте нужный чат в MAX и повторите." );
+                        "Не удалось найти чат «" + contact + "» в MAX. Выберите чат из списка (кнопка «Обновить из MAX») " +
+                        "или откройте его в MAX вручную и повторите отправку." );
                 }
 
                 Thread.Sleep( Math.Max( 800 , _settings.ChatOpenDelayMs / 2 ) );
@@ -191,22 +195,31 @@ namespace TelegramShareAddin
             return pid;
         }
 
+        /// <summary>
+        /// Username MAX из строки вида «@name». Возвращает null, если это не похоже
+        /// на username (кириллица, пробелы, отображаемое имя чата и т.п.).
+        /// </summary>
         public static string NormalizeUsername( string contact )
         {
             string c = ( contact ?? string.Empty ).Trim( );
-            if ( c.StartsWith( "@" , StringComparison.Ordinal ) )
+            if ( !c.StartsWith( "@" , StringComparison.Ordinal ) )
             {
-                c = c.Substring( 1 );
+                return null;
             }
 
-            if ( c.Length == 0 )
+            c = c.Substring( 1 ).Trim( ).ToLowerInvariant( );
+
+            if ( c.Length < 2 || c.Length > 40 )
             {
                 return null;
             }
 
             foreach ( char ch in c )
             {
-                if ( !char.IsLetterOrDigit( ch ) && ch != '_' && ch != '-' && ch != '.' )
+                bool ok = ( ch >= 'a' && ch <= 'z' ) ||
+                          ( ch >= '0' && ch <= '9' ) ||
+                          ch == '_' || ch == '.' || ch == '-';
+                if ( !ok )
                 {
                     return null;
                 }
