@@ -78,10 +78,55 @@ namespace TelegramShareAddin
             get { return _rememberCheckBox.Checked; }
         }
 
+        /// <summary>Контакт с учётом fuzzy-сопоставления по загруженным чатам.</summary>
+        public string ResolvedContact
+        {
+            get { return ResolveChatName( Contact ); }
+        }
+
         /// <summary>true — контакт совпадает с чатом из загруженного списка (открываем чат кликом(.</summary>
         public bool OpenByChatName
         {
-            get { return _chatNames.Contains( Contact ); }
+            get { return _chatNames.Contains( ResolvedContact ); }
+        }
+
+        /// <summary>
+        /// Для MAX: если введённая строка не совпадает с именем чата точно, но
+        /// является подстрокой ровно одного загруженного имени, подставляем полное
+        /// имя чата. Для Telegram возвращаем как есть.
+        /// </summary>
+        private string ResolveChatName( string contact )
+        {
+            string c = ( contact ?? string.Empty ).Trim( );
+            if ( string.IsNullOrEmpty( c ) || Messenger != Messenger.Max )
+            {
+                return c;
+            }
+
+            // Точное совпадение.
+            foreach ( string name in _chatNames )
+            {
+                if ( string.Equals( name , c , StringComparison.OrdinalIgnoreCase ) )
+                {
+                    return name;
+                }
+            }
+
+            // Подстрока — только если однозначно.
+            string match = null;
+            foreach ( string name in _chatNames )
+            {
+                if ( name.IndexOf( c , StringComparison.OrdinalIgnoreCase ) >= 0 )
+                {
+                    if ( match != null )
+                    {
+                        return c; // неоднозначно
+                    }
+                    match = name;
+                }
+            }
+
+            return match ?? c;
         }
 
         public SendForm( Settings settings , string nativeLabel , bool allowPdf , Messenger defaultMessenger )
@@ -341,7 +386,7 @@ namespace TelegramShareAddin
             base.OnLoad( e );
             try
             {
-                SendMessage( _searchBox.Handle , EM_SETCUEBANNER , (IntPtr)1 , "Фильтр по первым буквам..." );
+                SendMessage( _searchBox.Handle , EM_SETCUEBANNER , (IntPtr)1 , "Фильтр по имени..." );
             }
             catch
             {
@@ -552,7 +597,7 @@ namespace TelegramShareAddin
             foreach ( ContactItem item in _all )
             {
                 if ( filter.Length == 0 ||
-                     item.Name.StartsWith( filter , StringComparison.OrdinalIgnoreCase ) )
+                     item.Name.IndexOf( filter , StringComparison.OrdinalIgnoreCase ) >= 0 )
                 {
                     _contactsList.Items.Add( item );
                 }
@@ -628,11 +673,17 @@ namespace TelegramShareAddin
 
         private void OnAddContact( object sender , EventArgs e )
         {
-            string c = _contactBox.Text.Trim( ).TrimStart( '@' );
+            string c = _contactBox.Text.Trim( );
             if ( string.IsNullOrEmpty( c ) )
             {
                 MessageBox.Show( "Введите контакт, чтобы добавить его в список." , "Отправить сообщение" , MessageBoxButtons.OK , MessageBoxIcon.Information );
                 return;
+            }
+
+            // Для MAX подставляем полное имя чата, если введена однозначная подстрока.
+            if ( Messenger == Messenger.Max )
+            {
+                c = ResolveChatName( c );
             }
 
             _hiddenChats.Remove( c );

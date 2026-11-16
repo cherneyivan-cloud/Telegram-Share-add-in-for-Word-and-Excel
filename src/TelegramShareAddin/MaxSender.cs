@@ -511,6 +511,10 @@ namespace TelegramShareAddin
             while ( Environment.TickCount < deadline )
             {
                 AutomationElement item = FindChat( pid , chatName );
+                if ( item == null )
+                {
+                    item = FindChatBySubstring( pid , chatName );
+                }
                 if ( item != null && ClickElement( item ) )
                 {
                     return true;
@@ -520,6 +524,10 @@ namespace TelegramShareAddin
                 Thread.Sleep( 400 );
 
                 item = FindChat( pid , chatName );
+                if ( item == null )
+                {
+                    item = FindChatBySubstring( pid , chatName );
+                }
                 if ( item != null && ClickElement( item ) )
                 {
                     return true;
@@ -623,6 +631,37 @@ namespace TelegramShareAddin
                 }
             }
             return null;
+        }
+
+        /// <summary>Ищет чат, имя которого содержит заданную подстроку (только если однозначно).</summary>
+        private static AutomationElement FindChatBySubstring( int pid , string chatName )
+        {
+            string needle = ( chatName ?? string.Empty ).Trim( );
+            if ( string.IsNullOrEmpty( needle ) )
+            {
+                return null;
+            }
+
+            AutomationElement match = null;
+            foreach ( AutomationElement item in ChatButtons( pid ) )
+            {
+                string name = SafeName( item );
+                if ( string.IsNullOrEmpty( name ) )
+                {
+                    continue;
+                }
+
+                if ( name.IndexOf( needle , StringComparison.OrdinalIgnoreCase ) >= 0 )
+                {
+                    if ( match != null )
+                    {
+                        return null; // неоднозначно
+                    }
+                    match = item;
+                }
+            }
+
+            return match;
         }
 
         private static List<AutomationElement> ChatButtons( int pid )

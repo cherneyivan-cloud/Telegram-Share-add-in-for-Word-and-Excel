@@ -139,9 +139,10 @@ namespace TelegramShareAddin
                     try
                     {
                         string tempFile = saveDocument( form.Format );
+                        string contact = messenger == Messenger.Max ? form.ResolvedContact : form.Contact;
                         var options = new SendOptions
                         {
-                            Contact = form.Contact ,
+                            Contact = contact ,
                             Message = form.Message ,
                             Format = form.Format ,
                             Messenger = messenger ,
