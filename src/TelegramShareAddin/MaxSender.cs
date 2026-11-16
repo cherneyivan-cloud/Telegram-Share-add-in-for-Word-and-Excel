@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Windows.Automation;
@@ -141,14 +142,97 @@ namespace TelegramShareAddin
                 p => string.Equals( p.ProcessName , "max" , StringComparison.OrdinalIgnoreCase ) );
         }
 
-        public static IntPtr FindWindow( )
+        private static string FindMaxExe( )
         {
             foreach ( Process p in GetProcesses( ) )
             {
                 try
                 {
+                    string path = p.MainModule.FileName;
+                    if ( !string.IsNullOrEmpty( path ) && File.Exists( path ) )
+                    {
+                        return path;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            string[ ] candidates =
+            {
+                Path.Combine( Environment.GetFolderPath( Environment.SpecialFolder.ApplicationData ) , @"MAX\max.exe" ) ,
+                Path.Combine( Environment.GetFolderPath( Environment.SpecialFolder.LocalApplicationData ) , @"MAX\max.exe" ) ,
+                Path.Combine( Environment.GetFolderPath( Environment.SpecialFolder.ProgramFiles ) , @"MAX\max.exe" ) ,
+                Path.Combine( Environment.GetFolderPath( Environment.SpecialFolder.ProgramFilesX86 ) , @"MAX\max.exe" )
+            };
+
+            foreach ( string c in candidates )
+            {
+                if ( File.Exists( c ) )
+                {
+                    return c;
+                }
+            }
+
+            return null;
+        }
+
+        public static IntPtr FindWindow( )
+        {
+            IntPtr best = IntPtr.Zero;
+            int bestArea = 0;
+
+            foreach ( Process p in GetProcesses( ) )
+            {
+                int pid = p.Id;
+
+                EnumWindows( delegate( IntPtr h , IntPtr l )
+                {
+                    int wpid;
+                    GetWindowThreadProcessId( h , out wpid );
+                    if ( wpid != pid )
+                    {
+                        return true;
+                    }
+
+                    RECT r;
+                    if ( !GetWindowRect( h , out r ) )
+                    {
+                        return true;
+                    }
+
+                    string title = GetWindowTitle( h );
+                    int area = ( r.Right - r.Left ) * ( r.Bottom - r.Top );
+
+                    // Главное окно MAX — с заголовком «MAX» и нормальным размером.
+                    // Служебные окна («max», «QTrayIconMessageWindow», «_q_titlebar»)
+                    // исключаем по размеру/заголовку.
+                    if ( string.Equals( title , "MAX" , StringComparison.OrdinalIgnoreCase ) && area > 200000 )
+                    {
+                        if ( area > bestArea )
+                        {
+                            bestArea = area;
+                            best = h;
+                        }
+                    }
+
+                    return true;
+                } , IntPtr.Zero );
+            }
+
+            if ( best != IntPtr.Zero )
+            {
+                return best;
+            }
+
+            // Запасной вариант: обычное видимое главное окно.
+            foreach ( Process p in GetProcesses( ) )
+            {
+                try
+                {
                     IntPtr h = p.MainWindowHandle;
-                    if ( h != IntPtr.Zero && IsWindowVisible( h ) )
+                    if ( h != IntPtr.Zero )
                     {
                         return h;
                     }
@@ -157,6 +241,7 @@ namespace TelegramShareAddin
                 {
                 }
             }
+
             return IntPtr.Zero;
         }
 
@@ -261,37 +346,135 @@ namespace TelegramShareAddin
             Activate( hwnd );
             Thread.Sleep( 500 );
 
-            // MAX виртуализирует список: UI Automation видит только элементы
-            // текущего экрана. Прокручиваем список до конца и собираем каждый
-            // появившийся набор ChatDelegate.
-            ScrollChatList( pid , 30 );
-            Thread.Sleep( 400 );
+            // Если MAX был свёрнут в трей, окно есть, но QML ещё не отрисован
+            // (UI Automation не видит список). Повторный запуск exe активирует
+            // уже работающий экземпляр и заставляет его отрисовать интерфейс.
+            if ( ReadVisibleNames( pid ).Count == 0 )
+            {
+                try
+                {
+                    string exe = FindMaxExe( );
+                    if ( !string.IsNullOrEmpty( exe ) )
+                    {
+                        Process.Start( new ProcessStartInfo( exe ) { UseShellExecute = true } );
+                        Thread.Sleep( 3500 );
+
+                        hwnd = FindWindow( );
+                        if ( hwnd != IntPtr.Zero )
+                        {
+                            Activate( hwnd );
+                            Thread.Sleep( 600 );
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            // Основной (детерминированный) способ: у скроллбара списка чатов MAX
+            // есть RangeValuePattern (0..100). Двигаем его по позициям и собираем
+            // видимые чаты. Это быстро и не зависит от фокуса/переднего плана.
+            AutomationElement scrollBar = FindChatScrollBar( pid );
+            object rangeObject;
+            if ( scrollBar != null &&
+                 scrollBar.TryGetCurrentPattern( RangeValuePattern.Pattern , out rangeObject ) )
+            {
+                var range = (RangeValuePattern)rangeObject;
+
+                try { range.SetValue( 0 ); } catch { }
+
+                for ( double v = 0; v <= 100; v += 5 )
+                {
+                    try { range.SetValue( v ); } catch { }
+                    Thread.Sleep( 60 );
+
+                    foreach ( string name in ReadVisibleNames( pid ) )
+                    {
+                        if ( seen.Add( name ) )
+                        {
+                            result.Add( new MessengerChatInfo { Name = name , Type = string.Empty } );
+                        }
+                    }
+                }
+
+                try { range.SetValue( 0 ); } catch { }
+                return result;
+            }
+
+            // Запасной вариант (нет RangeValuePattern) — прокрутка колесом.
+            ScrollToTop( hwnd );
+
+            int added = CollectChats( hwnd , result , seen );
+
+            // При «холодном» старте первая прокрутка может не сработать. Повторяем.
+            if ( added < 15 )
+            {
+                Activate( hwnd );
+                Thread.Sleep( 600 );
+                result.Clear( );
+                seen.Clear( );
+                CollectChats( hwnd , result , seen );
+            }
+
+            // Возвращаем список к началу.
+            ScrollToTop( hwnd );
+            return result;
+        }
+
+        /// <summary>Скроллбар списка чатов MAX (поддерживает RangeValuePattern).</summary>
+        private static AutomationElement FindChatScrollBar( int pid )
+        {
+            foreach ( AutomationElement window in TopWindows( pid ) )
+            {
+                try
+                {
+                    var condition = new PropertyCondition( AutomationElement.ControlTypeProperty , ControlType.ScrollBar );
+                    AutomationElementCollection bars = window.FindAll( TreeScope.Descendants , condition );
+
+                    foreach ( AutomationElement bar in bars )
+                    {
+                        string id = SafeAutomationId( bar );
+                        if ( id.IndexOf( "LeadingChatsBar" , StringComparison.OrdinalIgnoreCase ) >= 0 &&
+                             id.IndexOf( "MeScrollBar" , StringComparison.OrdinalIgnoreCase ) >= 0 )
+                        {
+                            return bar;
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>Листает список вниз и добавляет в result/seen новые чаты.</summary>
+        private static int CollectChats( IntPtr hwnd , List<MessengerChatInfo> result , HashSet<string> seen )
+        {
+            int pid = GetProcessId( hwnd );
+            int before = result.Count;
+
+            ScrollToTop( hwnd );
 
             string previousSignature = null;
             int unchangedPasses = 0;
-            const int MaxPasses = 350;
+            const int MaxPasses = 400;
 
             for ( int pass = 0; pass < MaxPasses; pass++ )
             {
-                List<AutomationElement> buttons = ChatButtons( pid );
-                var visibleNames = new List<string>( );
+                List<string> visibleNames = ReadVisibleNames( pid );
+                string signature = string.Join( "\u001f" , visibleNames );
 
-                foreach ( AutomationElement item in buttons )
+                foreach ( string name in visibleNames )
                 {
-                    string name = SafeName( item );
-                    if ( string.IsNullOrEmpty( name ) )
-                    {
-                        continue;
-                    }
-
-                    visibleNames.Add( name );
                     if ( seen.Add( name ) )
                     {
                         result.Add( new MessengerChatInfo { Name = name , Type = string.Empty } );
                     }
                 }
 
-                string signature = string.Join( "\u001f" , visibleNames );
                 if ( string.Equals( signature , previousSignature , StringComparison.Ordinal ) )
                 {
                     unchangedPasses++;
@@ -302,18 +485,16 @@ namespace TelegramShareAddin
                     previousSignature = signature;
                 }
 
-                if ( buttons.Count == 0 || unchangedPasses >= 3 )
+                if ( visibleNames.Count == 0 || unchangedPasses >= 2 )
                 {
                     break;
                 }
 
-                ScrollChatList( pid , 6 );
-                Thread.Sleep( 180 );
+                ScrollChatList( hwnd , 10 );
+                Thread.Sleep( 130 );
             }
 
-            // Не оставляем MAX внизу списка после обновления.
-            ScrollChatList( pid , 30 );
-            return result;
+            return result.Count - before;
         }
 
         public static bool OpenChat( int pid , string chatName , int timeoutMs )
@@ -322,6 +503,8 @@ namespace TelegramShareAddin
             {
                 return false;
             }
+
+            IntPtr hwnd = FindWindow( );
 
             int deadline = Environment.TickCount + timeoutMs;
 
@@ -333,7 +516,7 @@ namespace TelegramShareAddin
                     return true;
                 }
 
-                ScrollChatList( pid , -4 );
+                ScrollChatList( hwnd , -4 );
                 Thread.Sleep( 400 );
 
                 item = FindChat( pid , chatName );
@@ -347,7 +530,7 @@ namespace TelegramShareAddin
                     break;
                 }
 
-                ScrollChatList( pid , 4 );
+                ScrollChatList( hwnd , 4 );
                 Thread.Sleep( 400 );
             }
 
@@ -468,8 +651,15 @@ namespace TelegramShareAddin
             return result;
         }
 
-        private static void ScrollChatList( int pid , int steps )
+        private static void ScrollChatList( IntPtr hwnd , int steps )
         {
+            if ( steps == 0 )
+            {
+                return;
+            }
+
+            int pid = GetProcessId( hwnd );
+
             AutomationElement chatBar = FindChatBar( pid );
             if ( chatBar == null )
             {
@@ -482,20 +672,83 @@ namespace TelegramShareAddin
                 return;
             }
 
-            // У отдельных версий MAX ChatDelegate возвращаются UI Automation
-            // даже с отрицательной координатой (виртуализированные элементы).
-            // Поэтому нельзя вычислять точку колеса по первой кнопке.
-            SetCursorPos( (int)( r.Left + r.Width / 2 ) , (int)( r.Top + r.Height - 180 ) );
-            Thread.Sleep( 60 );
+            // Прокручиваем колесом (mouse_event) по одному «щелчку» за раз —
+            // крупные дельты Qt обрабатывает непредсказуемо. Курсор предварительно
+            // ставим над списком: Qt направляет прокрутку элементу под курсором.
+            int x = (int)( r.Left + r.Width / 2 );
+            int y = (int)( r.Top + r.Height - 180 );
+            SetCursorPos( x , y );
+            Thread.Sleep( 30 );
 
-            int delta = steps >= 0 ? -120 : 120;
+            int delta = steps > 0 ? -120 : 120;
             for ( int i = 0; i < Math.Abs( steps ); i++ )
             {
                 mouse_event( MOUSEEVENTF_WHEEL , 0 , 0 , delta , UIntPtr.Zero );
-                Thread.Sleep( 80 );
+                Thread.Sleep( 15 );
             }
 
-            Thread.Sleep( 250 );
+            Thread.Sleep( 160 );
+        }
+
+        /// <summary>Имена видимых (экспонированных UIA) чатов в порядке списка.</summary>
+        private static List<string> ReadVisibleNames( int pid )
+        {
+            var names = new List<string>( );
+            foreach ( AutomationElement item in ChatButtons( pid ) )
+            {
+                string name = SafeName( item );
+                if ( !string.IsNullOrEmpty( name ) )
+                {
+                    names.Add( name );
+                }
+            }
+            return names;
+        }
+
+        /// <summary>Прокрутка к началу списка (до стабилизации первого элемента).</summary>
+        private static void ScrollToTop( IntPtr hwnd )
+        {
+            int pid = GetProcessId( hwnd );
+            string previousFirst = null;
+            int unchanged = 0;
+            int emptyPasses = 0;
+
+            for ( int i = 0; i < 60; i++ )
+            {
+                List<string> names = ReadVisibleNames( pid );
+                string first = names.Count > 0 ? names[0] : string.Empty;
+
+                if ( names.Count == 0 )
+                {
+                    emptyPasses++;
+                    if ( emptyPasses >= 3 )
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    emptyPasses = 0;
+                }
+
+                if ( string.Equals( first , previousFirst , StringComparison.Ordinal ) )
+                {
+                    unchanged++;
+                }
+                else
+                {
+                    unchanged = 0;
+                    previousFirst = first;
+                }
+
+                if ( names.Count > 0 && unchanged >= 3 )
+                {
+                    break;
+                }
+
+                ScrollChatList( hwnd , -20 );
+                Thread.Sleep( 120 );
+            }
         }
 
         private static AutomationElement FindChatBar( int pid )
@@ -736,5 +989,27 @@ namespace TelegramShareAddin
 
         [System.Runtime.InteropServices.DllImport( "user32.dll" )]
         private static extern bool GetWindowRect( IntPtr hWnd , out RECT rect );
+
+        [System.Runtime.InteropServices.DllImport( "user32.dll" )]
+        private static extern bool EnumWindows( EnumWindowsProc callback , IntPtr lParam );
+
+        [System.Runtime.InteropServices.DllImport( "user32.dll" , CharSet = System.Runtime.InteropServices.CharSet.Unicode )]
+        private static extern int GetWindowText( IntPtr hWnd , System.Text.StringBuilder text , int maxCount );
+
+        private delegate bool EnumWindowsProc( IntPtr hWnd , IntPtr lParam );
+
+        private static string GetWindowTitle( IntPtr hWnd )
+        {
+            try
+            {
+                var sb = new System.Text.StringBuilder( 256 );
+                GetWindowText( hWnd , sb , sb.Capacity );
+                return sb.ToString( );
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
     }
 }
