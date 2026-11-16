@@ -181,11 +181,6 @@ namespace TelegramShareAddin
             }
         }
 
-        public void OnOpenGitHub( IRibbonControl control )
-        {
-            AddinCore.OpenGitHub( );
-        }
-
         public void OnCheckUpdates( IRibbonControl control )
         {
             UpdateManager.CheckAndInstall( );

@@ -11,7 +11,7 @@ namespace TelegramShareAddin
     /// <summary>Проверка и установка обновлений из GitHub Releases.</summary>
     internal static class UpdateManager
     {
-        public const string CurrentVersion = "1.5.2";
+        public const string CurrentVersion = "1.5.3";
 
         private const string LatestReleaseUrl =
             "https://api.github.com/repos/cherneyivan-cloud/Telegram-Share-add-in-for-Word-and-Excel/releases/latest";

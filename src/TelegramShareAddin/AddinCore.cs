@@ -15,7 +15,6 @@ namespace TelegramShareAddin
     {
         private static IPictureDisp _imageRectangular;
         private static IPictureDisp _imageRounded;
-        private static IPictureDisp _imageGitHub;
         private static IPictureDisp _imagePaperclip;
         private static IPictureDisp _imagePrinter;
         private static IPictureDisp _imageMax;
@@ -58,15 +57,6 @@ namespace TelegramShareAddin
                         _imageRectangular = PictureConverter.ToPictureDisp( IconFactory.CreateRectangular( ) );
                     }
                     return _imageRectangular;
-                }
-
-                if ( control != null && control.Id == "TelegramShareGitHubButton" )
-                {
-                    if ( _imageGitHub == null )
-                    {
-                        _imageGitHub = PictureConverter.ToPictureDisp( IconFactory.CreateGitHub( ) );
-                    }
-                    return _imageGitHub;
                 }
 
                 if ( control != null && control.Id == "TelegramShareAttachmentsButton" )
@@ -223,20 +213,6 @@ namespace TelegramShareAddin
             {
                 Log( "OnSendViaTelegram ERROR: " + ex.ToString( ) );
                 MessageBox.Show( "Ошибка: " + ex.Message , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Error );
-            }
-        }
-
-        public static void OpenGitHub( )
-        {
-            try
-            {
-                Log( "OnOpenGitHub: " + RibbonDefinition.GitHubUrl );
-                System.Diagnostics.Process.Start( new System.Diagnostics.ProcessStartInfo( RibbonDefinition.GitHubUrl ) { UseShellExecute = true } );
-            }
-            catch ( Exception ex )
-            {
-                Log( "OnOpenGitHub ERROR: " + ex.ToString( ) );
-                MessageBox.Show( "Не удалось открыть ссылку: " + ex.Message , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Error );
             }
         }
 

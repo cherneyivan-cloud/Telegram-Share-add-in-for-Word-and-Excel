@@ -88,11 +88,6 @@ namespace TelegramShareAddin
             AddinCore.SendVia( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true );
         }
 
-        public void OnOpenGitHub( IRibbonControl control )
-        {
-            AddinCore.OpenGitHub( );
-        }
-
         public void OnCheckUpdates( IRibbonControl control )
         {
             UpdateManager.CheckAndInstall( );
