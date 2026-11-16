@@ -93,6 +93,11 @@ namespace TelegramShareAddin
             AddinCore.OpenGitHub( );
         }
 
+        public void OnCheckUpdates( IRibbonControl control )
+        {
+            UpdateManager.CheckAndInstall( );
+        }
+
         // --------------------------------------------------------------
 
         private void EnsureSettings( )

@@ -78,6 +78,7 @@
     <Compile Include="SendForm.cs" />
     <Compile Include="Settings.cs" />
     <Compile Include="TelegramSender.cs" />
+    <Compile Include="UpdateManager.cs" />
     <Compile Include="WordDocumentSaver.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

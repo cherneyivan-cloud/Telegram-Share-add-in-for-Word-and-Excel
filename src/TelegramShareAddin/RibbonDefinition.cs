@@ -55,6 +55,10 @@
                    " screentip=\"Страница проекта на GitHub\"" +
                    " supertip=\"" + GitHubUrl + "\"" +
                    " onAction=\"OnOpenGitHub\"/>" +
+                   "<button id=\"TelegramShareUpdateButton\" label=\"Проверить обновления\" size=\"large\"" +
+                   " imageMso=\"Refresh\" screentip=\"Проверить обновления Telegram Share\"" +
+                   " supertip=\"Проверяет новую версию и предлагает установить обновление\"" +
+                   " onAction=\"OnCheckUpdates\"/>" +
                    "</group>" +
                    "</tab>" +
                    "</tabs>" +

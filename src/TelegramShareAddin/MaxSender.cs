@@ -252,15 +252,67 @@ namespace TelegramShareAddin
             var result = new List<MessengerChatInfo>( );
             var seen = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
 
-            foreach ( AutomationElement item in ChatButtons( pid ) )
+            IntPtr hwnd = FindWindow( );
+            if ( hwnd == IntPtr.Zero )
             {
-                string name = SafeName( item );
-                if ( !string.IsNullOrEmpty( name ) && seen.Add( name ) )
-                {
-                    result.Add( new MessengerChatInfo { Name = name , Type = string.Empty } );
-                }
+                return result;
             }
 
+            Activate( hwnd );
+            Thread.Sleep( 500 );
+
+            // MAX виртуализирует список: UI Automation видит только элементы
+            // текущего экрана. Прокручиваем список до конца и собираем каждый
+            // появившийся набор ChatDelegate.
+            ScrollChatList( pid , 30 );
+            Thread.Sleep( 400 );
+
+            string previousSignature = null;
+            int unchangedPasses = 0;
+            const int MaxPasses = 350;
+
+            for ( int pass = 0; pass < MaxPasses; pass++ )
+            {
+                List<AutomationElement> buttons = ChatButtons( pid );
+                var visibleNames = new List<string>( );
+
+                foreach ( AutomationElement item in buttons )
+                {
+                    string name = SafeName( item );
+                    if ( string.IsNullOrEmpty( name ) )
+                    {
+                        continue;
+                    }
+
+                    visibleNames.Add( name );
+                    if ( seen.Add( name ) )
+                    {
+                        result.Add( new MessengerChatInfo { Name = name , Type = string.Empty } );
+                    }
+                }
+
+                string signature = string.Join( "\u001f" , visibleNames );
+                if ( string.Equals( signature , previousSignature , StringComparison.Ordinal ) )
+                {
+                    unchangedPasses++;
+                }
+                else
+                {
+                    unchangedPasses = 0;
+                    previousSignature = signature;
+                }
+
+                if ( buttons.Count == 0 || unchangedPasses >= 3 )
+                {
+                    break;
+                }
+
+                ScrollChatList( pid , 6 );
+                Thread.Sleep( 180 );
+            }
+
+            // Не оставляем MAX внизу списка после обновления.
+            ScrollChatList( pid , 30 );
             return result;
         }
 
@@ -418,19 +470,22 @@ namespace TelegramShareAddin
 
         private static void ScrollChatList( int pid , int steps )
         {
-            List<AutomationElement> buttons = ChatButtons( pid );
-            if ( buttons.Count == 0 )
+            AutomationElement chatBar = FindChatBar( pid );
+            if ( chatBar == null )
             {
                 return;
             }
 
             System.Windows.Rect r;
-            if ( !TryGetRect( buttons[0] , out r ) )
+            if ( !TryGetRect( chatBar , out r ) )
             {
                 return;
             }
 
-            SetCursorPos( (int)( r.Left + 30 ) , (int)( r.Top + 40 ) );
+            // У отдельных версий MAX ChatDelegate возвращаются UI Automation
+            // даже с отрицательной координатой (виртуализированные элементы).
+            // Поэтому нельзя вычислять точку колеса по первой кнопке.
+            SetCursorPos( (int)( r.Left + r.Width / 2 ) , (int)( r.Top + r.Height - 180 ) );
             Thread.Sleep( 60 );
 
             int delta = steps >= 0 ? -120 : 120;
@@ -441,6 +496,28 @@ namespace TelegramShareAddin
             }
 
             Thread.Sleep( 250 );
+        }
+
+        private static AutomationElement FindChatBar( int pid )
+        {
+            foreach ( AutomationElement window in TopWindows( pid ) )
+            {
+                try
+                {
+                    AutomationElement bar = window.FindFirst(
+                        TreeScope.Descendants,
+                        new PropertyCondition( AutomationElement.AutomationIdProperty , "LeadingChatsBar" ) );
+                    if ( bar != null )
+                    {
+                        return bar;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return null;
         }
 
         private static AutomationElement RightmostSendButton( IntPtr hwnd )

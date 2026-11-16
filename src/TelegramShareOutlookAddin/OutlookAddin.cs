@@ -186,6 +186,11 @@ namespace TelegramShareAddin
             AddinCore.OpenGitHub( );
         }
 
+        public void OnCheckUpdates( IRibbonControl control )
+        {
+            UpdateManager.CheckAndInstall( );
+        }
+
         /// <summary>
         /// Печать письма стандартным диалогом Outlook (Ctrl+P). Пользователь сам выбирает
         /// принтер, например «Microsoft Print to PDF», и сохраняет PDF.
