@@ -26,16 +26,6 @@
         public static readonly string Xml = Build( false );
         public static readonly string OutlookXml = Build( true );
 
-        // Кнопки в панели быстрого доступа (QAT) в заголовке окна.
-        // insertAfterMso/insertAfter сохраняют уже настроенные пользователем кнопки.
-        private const string Qat =
-            "<qat>" +
-            "<sharedControls>" +
-            "<control id=\"TelegramShareSendViaButton\" insertAfterMso=\"FileSave\"/>" +
-            "<control id=\"TelegramShareMaxButton\" insertAfter=\"TelegramShareSendViaButton\"/>" +
-            "</sharedControls>" +
-            "</qat>";
-
         private static string Build( bool withAttachments )
         {
             string attachments = withAttachments ? ( AttachmentsButton + PrintButton ) : "";
@@ -59,6 +49,10 @@
                    MaxButton +
                    "</group>" +
                    "<group id=\"TelegramShareLinksGroup\" label=\"Проект\">" +
+                   "<button id=\"TelegramSharePinQatButton\" label=\"В заголовок окна\" size=\"large\"" +
+                   " getImage=\"GetButtonImage\" screentip=\"Закрепить кнопки в заголовке окна\"" +
+                   " supertip=\"Добавляет кнопки «Отправить в Telegram» и «Отправить в MAX» на панель быстрого доступа рядом с кнопкой «Сохранить». Достаточно нажать один раз\"" +
+                   " onAction=\"OnPinToQat\"/>" +
                    "<button id=\"TelegramShareUpdateButton\" label=\"Проверить обновления\" size=\"large\"" +
                    " imageMso=\"Refresh\" screentip=\"Проверить обновления Telegram Share\"" +
                    " supertip=\"Проверяет новую версию и предлагает установить обновление\"" +
@@ -67,7 +61,6 @@
                    "</tab>" +
                    "</tabs>" +
                    "</ribbon>" +
-                   Qat +
                    "</customUI>";
         }
     }

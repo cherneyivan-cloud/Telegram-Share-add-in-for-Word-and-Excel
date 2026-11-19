@@ -181,6 +181,11 @@ namespace TelegramShareAddin
             }
         }
 
+        public void OnPinToQat( IRibbonControl control )
+        {
+            QatPinner.Start( );
+        }
+
         public void OnCheckUpdates( IRibbonControl control )
         {
             UpdateManager.CheckAndInstall( );

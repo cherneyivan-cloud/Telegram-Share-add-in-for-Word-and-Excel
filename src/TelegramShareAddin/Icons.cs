@@ -128,6 +128,41 @@ namespace TelegramShareAddin
             return bmp;
         }
 
+        /// <summary>Значок «канцелярская кнопка» для закрепления в заголовке окна.</summary>
+        public static Bitmap CreatePin( )
+        {
+            var bmp = new Bitmap( 32 , 32 );
+            using ( var g = Graphics.FromImage( bmp ) )
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.Clear( Color.Transparent );
+
+                using ( var bg = new SolidBrush( Color.FromArgb( 42 , 171 , 238 ) ) )
+                using ( var bgPath = RoundedRect( new Rectangle( 1 , 1 , 30 , 30 ) , 6 ) )
+                {
+                    g.FillPath( bg , bgPath );
+                }
+
+                using ( var white = new SolidBrush( Color.White ) )
+                {
+                    // шляпка кнопки
+                    g.FillRectangle( white , 11 , 6 , 10 , 4 );
+                    // ножка
+                    g.FillRectangle( white , 14 , 10 , 4 , 11 );
+                    // остриё
+                    g.FillPolygon( white , new Point[ ]
+                    {
+                        new Point( 16 , 26 ),
+                        new Point( 12 , 21 ),
+                        new Point( 20 , 21 )
+                    } );
+                    // наклонная тень
+                    g.FillRectangle( white , 8 , 12 , 3 , 3 );
+                }
+            }
+            return bmp;
+        }
+
         private static Bitmap Draw( bool rounded )
         {
             var bmp = new Bitmap( 32 , 32 );

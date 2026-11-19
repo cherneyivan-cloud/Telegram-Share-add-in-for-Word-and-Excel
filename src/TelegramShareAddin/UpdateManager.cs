@@ -11,7 +11,7 @@ namespace TelegramShareAddin
     /// <summary>Проверка и установка обновлений из GitHub Releases.</summary>
     internal static class UpdateManager
     {
-        public const string CurrentVersion = "1.5.5";
+        public const string CurrentVersion = "1.5.6";
 
         static UpdateManager( )
         {

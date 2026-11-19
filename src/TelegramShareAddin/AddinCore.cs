@@ -18,6 +18,7 @@ namespace TelegramShareAddin
         private static IPictureDisp _imagePaperclip;
         private static IPictureDisp _imagePrinter;
         private static IPictureDisp _imageMax;
+        private static IPictureDisp _imagePin;
 
         public static string GetCustomUi( string ribbonId , bool outlook )
         {
@@ -84,6 +85,15 @@ namespace TelegramShareAddin
                         _imageMax = PictureConverter.ToPictureDisp( IconFactory.CreateMax( ) );
                     }
                     return _imageMax;
+                }
+
+                if ( control != null && control.Id == "TelegramSharePinQatButton" )
+                {
+                    if ( _imagePin == null )
+                    {
+                        _imagePin = PictureConverter.ToPictureDisp( IconFactory.CreatePin( ) );
+                    }
+                    return _imagePin;
                 }
             }
             catch ( Exception ex )

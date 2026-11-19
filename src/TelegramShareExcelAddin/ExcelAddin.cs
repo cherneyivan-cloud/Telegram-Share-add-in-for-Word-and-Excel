@@ -88,6 +88,11 @@ namespace TelegramShareAddin
             AddinCore.SendVia( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true );
         }
 
+        public void OnPinToQat( IRibbonControl control )
+        {
+            QatPinner.Start( );
+        }
+
         public void OnCheckUpdates( IRibbonControl control )
         {
             UpdateManager.CheckAndInstall( );

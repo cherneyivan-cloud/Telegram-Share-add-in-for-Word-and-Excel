@@ -77,6 +77,9 @@
     <Compile Include="..\TelegramShareAddin\MaxSender.cs">
       <Link>MaxSender.cs</Link>
     </Compile>
+    <Compile Include="..\TelegramShareAddin\QatPinner.cs">
+      <Link>QatPinner.cs</Link>
+    </Compile>
     <Compile Include="..\TelegramShareAddin\RibbonDefinition.cs">
       <Link>RibbonDefinition.cs</Link>
     </Compile>
