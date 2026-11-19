@@ -26,6 +26,16 @@
         public static readonly string Xml = Build( false );
         public static readonly string OutlookXml = Build( true );
 
+        // Кнопки в панели быстрого доступа (QAT) в заголовке окна.
+        // insertAfterMso/insertAfter сохраняют уже настроенные пользователем кнопки.
+        private const string Qat =
+            "<qat>" +
+            "<sharedControls>" +
+            "<control id=\"TelegramShareSendViaButton\" insertAfterMso=\"FileSave\"/>" +
+            "<control id=\"TelegramShareMaxButton\" insertAfter=\"TelegramShareSendViaButton\"/>" +
+            "</sharedControls>" +
+            "</qat>";
+
         private static string Build( bool withAttachments )
         {
             string attachments = withAttachments ? ( AttachmentsButton + PrintButton ) : "";
@@ -57,6 +67,7 @@
                    "</tab>" +
                    "</tabs>" +
                    "</ribbon>" +
+                   Qat +
                    "</customUI>";
         }
     }
