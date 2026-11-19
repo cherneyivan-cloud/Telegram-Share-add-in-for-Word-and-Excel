@@ -11,7 +11,36 @@ namespace TelegramShareAddin
     /// <summary>Проверка и установка обновлений из GitHub Releases.</summary>
     internal static class UpdateManager
     {
-        public const string CurrentVersion = "1.5.3";
+        public const string CurrentVersion = "1.5.4";
+
+        static UpdateManager( )
+        {
+            // GitHub отклоняет TLS 1.0/1.1. По умолчанию .NET Framework может
+            // выбрать SystemDefault, который на части машин ограничен старым TLS,
+            // из-за чего запрос падает с «Не удалось создать защищённый канал SSL/TLS».
+            EnableModernTls( );
+        }
+
+        private static void EnableModernTls( )
+        {
+            try
+            {
+                ServicePointManager.SecurityProtocol =
+                    SecurityProtocolType.Tls12 |
+                    SecurityProtocolType.Tls13 |
+                    SecurityProtocolType.Tls11;
+            }
+            catch
+            {
+                try
+                {
+                    ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+                }
+                catch
+                {
+                }
+            }
+        }
 
         private const string LatestReleaseUrl =
             "https://api.github.com/repos/cherneyivan-cloud/Telegram-Share-add-in-for-Word-and-Excel/releases/latest";
