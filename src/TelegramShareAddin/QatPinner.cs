@@ -55,8 +55,7 @@ namespace TelegramShareAddin
                     return;
                 }
 
-                IntPtr windowHandle = new IntPtr( window.Current.NativeWindowHandle );
-                EnsureForeground( windowHandle );
+                EnsureForeground( new IntPtr( window.Current.NativeWindowHandle ) );
 
                 EnsureSelected( tab );
                 Thread.Sleep( 900 );
@@ -66,38 +65,26 @@ namespace TelegramShareAddin
 
                 foreach ( string label in ButtonLabels )
                 {
-                    AutomationElement button = WaitFor( window , ControlType.Button , label , 1500 );
-                    if ( button == null )
-                    {
-                        // Лента может быть свёрнута — разворачиваем (Ctrl+F1) и пробуем снова.
-                        SendCtrlF1( );
-                        Thread.Sleep( 700 );
-                        button = WaitFor( window , ControlType.Button , label , 2000 );
-                    }
-
-                    if ( button == null )
-                    {
-                        AddinCore.Log( "QatPinner: кнопка не найдена: " + label );
-                        continue;
-                    }
-
-                    if ( CountVisible( window , label ) > 1 )
+                    if ( IsPinned( window , tab , label ) )
                     {
                         already++;
                         AddinCore.Log( "QatPinner: уже закреплена: " + label );
                         continue;
                     }
 
-                    if ( PinOne( window , label ) )
+                    if ( PinOne( window , tab , label ) )
                     {
                         added++;
+                        continue;
                     }
+
+                    AddinCore.Log( "QatPinner: не удалось закрепить: " + label );
                 }
 
                 int pinned = 0;
                 foreach ( string label in ButtonLabels )
                 {
-                    if ( CountVisible( window , label ) > 1 )
+                    if ( IsPinned( window , tab , label ) )
                     {
                         pinned++;
                     }
@@ -117,113 +104,143 @@ namespace TelegramShareAddin
             }
         }
 
-        private static bool PinOne( AutomationElement window , string label )
+        /// <summary>Закрепляет одну кнопку. Сначала пробует клавиатуру, затем правый щелчок; всего три подхода.</summary>
+        private static bool PinOne( AutomationElement window , AutomationElement tab , string label )
         {
-            string stage = "поиск кнопки";
-            POINT saved = new POINT( );
-            bool cursorSaved = false;
-
-            for ( int attempt = 0 ; attempt < 2 ; attempt++ )
+            for ( int attempt = 0 ; attempt < 3 ; attempt++ )
             {
+                if ( attempt > 0 )
+                {
+                    Thread.Sleep( 700 );
+                }
+
                 try
                 {
-                    stage = "поиск кнопки";
-                    // Элемент перечитываем заново: после переключения вкладки прежний может стать недоступным.
                     AutomationElement button = WaitFor( window , ControlType.Button , label , 2000 );
                     if ( button == null )
                     {
-                        return false;
+                        // Лента может быть свёрнута — разворачиваем (Ctrl+F1) и пробуем снова.
+                        AddinCore.Log( "QatPinner: кнопка не найдена, разворачиваю ленту: " + label );
+                        SendCtrlF1( );
+                        Thread.Sleep( 800 );
+                        continue;
                     }
 
-                    stage = "координаты кнопки";
-                    System.Windows.Rect rect = button.Current.BoundingRectangle;
-                    if ( rect.Width < 2 || rect.Height < 2 )
-                    {
-                        return false;
-                    }
-
-                    int x = ( int ) ( rect.X + rect.Width / 2 );
-                    int y = ( int ) ( rect.Y + rect.Height / 2 );
-
-                    stage = "наведение";
                     if ( !EnsureForeground( new IntPtr( window.Current.NativeWindowHandle ) ) )
                     {
                         AddinCore.Log( "QatPinner: окно не на переднем плане: " + label );
                         return false;
                     }
-                    Thread.Sleep( 250 );
 
-                    GetCursorPos( out saved );
-                    cursorSaved = true;
-
-                    SetCursorPos( x , y );
-                    Thread.Sleep( 200 );
-
-                    POINT point = new POINT( );
-                    point.X = x;
-                    point.Y = y;
-                    IntPtr under = WindowFromPoint( point );
-                    IntPtr rootWindow = under == IntPtr.Zero ? IntPtr.Zero : GetAncestor( under , GaRoot );
-                    if ( rootWindow != new IntPtr( window.Current.NativeWindowHandle ) )
+                    // 1. Клавиатурный путь: фокус на кнопку и Shift+F10. Точнее мышиного клика
+                    //    и не зависит от перекрывающих окон.
+                    if ( PinViaKeyboard( window , button ) )
                     {
-                        AddinCore.Log( "QatPinner: под курсором не окно Office: " + label );
-                        SetCursorPos( saved.X , saved.Y );
-                        cursorSaved = false;
-                        return false;
+                        AddinCore.Log( "QatPinner: кнопка «" + label + "» закреплена с клавиатуры" );
+                        return true;
                     }
 
-                    mouse_event( RightDown , 0 , 0 , 0 , UIntPtr.Zero );
-                    mouse_event( RightUp , 0 , 0 , 0 , UIntPtr.Zero );
-                    Thread.Sleep( 900 );
-
-                    stage = "поиск пункта меню";
-                    AutomationElement item = WaitForAddToQat( window , 2500 );
-
-                    if ( item == null )
+                    // 2. Мышиный путь: контекстное меню правым щелчком.
+                    if ( PinViaMouse( window , button , label ) )
                     {
-                        AddinCore.Log( "QatPinner: пункт меню не найден для " + label );
-                        PressEscape( );
-                        return false;
+                        AddinCore.Log( "QatPinner: кнопка «" + label + "» закреплена мышью" );
+                        return true;
                     }
-
-                    // Курсор возвращаем только после вызова: если увести его раньше,
-                    // всплывающее меню Office успевает закрыться.
-                    stage = "вызов пункта меню";
-                    AddinCore.Log( "QatPinner: пункт меню '" + SafeName( item ) + "'" );
-
-                    if ( !InvokeItem( item ) )
-                    {
-                        AddinCore.Log( "QatPinner: пункт меню не сработал для " + label );
-                        PressEscape( );
-                        SetCursorPos( saved.X , saved.Y );
-                        cursorSaved = false;
-                        return false;
-                    }
-
-                    SetCursorPos( saved.X , saved.Y );
-                    cursorSaved = false;
-                    Thread.Sleep( 600 );
-                    return true;
                 }
                 catch ( Exception ex )
                 {
                     AddinCore.Log( "QatPinner: попытка " + ( attempt + 1 ) + " не удалась для " + label +
-                                   " (" + ex.GetType( ).Name + " на этапе «" + stage + "»: " + ex.Message + ")" );
-                    if ( cursorSaved )
-                    {
-                        SetCursorPos( saved.X , saved.Y );
-                        cursorSaved = false;
-                    }
-                    if ( attempt == 0 )
-                    {
-                        Thread.Sleep( 800 );
-                        continue;
-                    }
-                    return false;
+                                   " (" + ex.GetType( ).Name + ": " + ex.Message + ")" );
                 }
             }
 
             return false;
+        }
+
+        /// <summary>Ставит фокус на кнопку ленты и вызывает контекстное меню через Shift+F10.</summary>
+        private static bool PinViaKeyboard( AutomationElement window , AutomationElement button )
+        {
+            try
+            {
+                button.SetFocus( );
+            }
+            catch ( Exception ex )
+            {
+                AddinCore.Log( "QatPinner: фокус на кнопку не установлен (" + ex.GetType( ).Name + ")" );
+                return false;
+            }
+
+            Thread.Sleep( 350 );
+            SendShiftF10( );
+            Thread.Sleep( 400 );
+
+            AutomationElement item = WaitForAddToQat( window );
+            if ( item == null )
+            {
+                PressEscape( );
+                return false;
+            }
+
+            return InvokeItem( item );
+        }
+
+        /// <summary>Открывает контекстное меню правым щелчком по кнопке ленты.</summary>
+        private static bool PinViaMouse( AutomationElement window , AutomationElement button , string label )
+        {
+            System.Windows.Rect rect;
+            try
+            {
+                rect = button.Current.BoundingRectangle;
+            }
+            catch
+            {
+                return false;
+            }
+
+            if ( rect.Width < 2 || rect.Height < 2 )
+            {
+                return false;
+            }
+
+            int x = ( int ) ( rect.X + rect.Width / 2 );
+            int y = ( int ) ( rect.Y + rect.Height / 2 );
+
+            POINT saved;
+            GetCursorPos( out saved );
+
+            SetCursorPos( x , y );
+            Thread.Sleep( 250 );
+
+            POINT point = new POINT( );
+            point.X = x;
+            point.Y = y;
+            IntPtr under = WindowFromPoint( point );
+            IntPtr rootWindow = under == IntPtr.Zero ? IntPtr.Zero : GetAncestor( under , GaRoot );
+            if ( rootWindow != new IntPtr( window.Current.NativeWindowHandle ) )
+            {
+                AddinCore.Log( "QatPinner: под курсором не окно Office: " + label );
+                SetCursorPos( saved.X , saved.Y );
+                return false;
+            }
+
+            mouse_event( RightDown , 0 , 0 , 0 , UIntPtr.Zero );
+            mouse_event( RightUp , 0 , 0 , 0 , UIntPtr.Zero );
+            Thread.Sleep( 900 );
+
+            AutomationElement item = WaitForAddToQat( window );
+            if ( item == null )
+            {
+                PressEscape( );
+                SetCursorPos( saved.X , saved.Y );
+                return false;
+            }
+
+            bool invoked = InvokeItem( item );
+
+            // Курсор возвращаем только после вызова: если увести его раньше,
+            // всплывающее меню Office успевает закрыться.
+            SetCursorPos( saved.X , saved.Y );
+            return invoked;
         }
 
         private static string SafeName( AutomationElement element )
@@ -241,6 +258,8 @@ namespace TelegramShareAddin
         /// <summary>Вызывает пункт меню; если шаблон недоступен — щёлкает по нему.</summary>
         private static bool InvokeItem( AutomationElement item )
         {
+            AddinCore.Log( "QatPinner: пункт меню '" + SafeName( item ) + "'" );
+
             try
             {
                 var pattern = item.GetCurrentPattern( InvokePattern.Pattern ) as InvokePattern;
@@ -276,47 +295,32 @@ namespace TelegramShareAddin
             }
         }
 
-        private static AutomationElement WaitForAddToQat( AutomationElement window , int timeoutMs )
+        /// <summary>Ищет пункт «Добавить на панель быстрого доступа» в открытом меню.</summary>
+        private static AutomationElement WaitForAddToQat( AutomationElement window )
         {
+            // Обычно меню лежит внутри окна приложения.
             int waited = 0;
-
-            while ( waited < timeoutMs )
+            while ( waited < 2500 )
             {
-                var condition = new PropertyCondition( AutomationElement.ControlTypeProperty , ControlType.MenuItem );
-                AutomationElementCollection items = window.FindAll( TreeScope.Descendants , condition );
-
-                foreach ( AutomationElement item in items )
+                AutomationElement item = FindAddToQat( window , TreeScope.Descendants );
+                if ( item != null )
                 {
-                    string name;
+                    return item;
+                }
 
-                    try
-                    {
-                        name = item.Current.Name;
-                    }
-                    catch
-                    {
-                        continue;
-                    }
+                Thread.Sleep( 150 );
+                waited += 150;
+            }
 
-                    if ( string.IsNullOrEmpty( name ) )
-                    {
-                        continue;
-                    }
-
-                    // Только пункт именно про панель быстрого доступа: остальные пункты меню
-                    // (папки, поиск, уведомления) трогать нельзя.
-                    bool addVerb = name.StartsWith( "Добавить" , StringComparison.OrdinalIgnoreCase ) ||
-                                   name.StartsWith( "Add" , StringComparison.OrdinalIgnoreCase ) ||
-                                   name.StartsWith( "Añadir" , StringComparison.OrdinalIgnoreCase ) ||
-                                   name.StartsWith( "Hinzufügen" , StringComparison.OrdinalIgnoreCase );
-
-                    bool quickAccess = name.IndexOf( "быстрого доступа" , StringComparison.OrdinalIgnoreCase ) >= 0 ||
-                                       name.IndexOf( "Quick Access" , StringComparison.OrdinalIgnoreCase ) >= 0;
-
-                    if ( addVerb && quickAccess )
-                    {
-                        return item;
-                    }
+            // В Outlook контекстное меню ленты открывается отдельным окном, поэтому
+            // ищем пункт по всему рабочему столу, но только среди окон своего процесса.
+            waited = 0;
+            while ( waited < 1200 )
+            {
+                AutomationElement item = FindAddToQat( AutomationElement.RootElement , TreeScope.Descendants );
+                if ( item != null )
+                {
+                    return item;
                 }
 
                 Thread.Sleep( 150 );
@@ -326,27 +330,135 @@ namespace TelegramShareAddin
             return null;
         }
 
-        private static int CountVisible( AutomationElement window , string label )
+        private static AutomationElement FindAddToQat( AutomationElement scope , TreeScope treeScope )
         {
+            var condition = new PropertyCondition( AutomationElement.ControlTypeProperty , ControlType.MenuItem );
+            int processId = Process.GetCurrentProcess( ).Id;
+
+            AutomationElementCollection items = scope.FindAll( treeScope , condition );
+            foreach ( AutomationElement item in items )
+            {
+                string name;
+                int itemProcessId;
+
+                try
+                {
+                    name = item.Current.Name;
+                    itemProcessId = item.Current.ProcessId;
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if ( string.IsNullOrEmpty( name ) || itemProcessId != processId )
+                {
+                    continue;
+                }
+
+                // Только пункт именно про панель быстрого доступа: остальные пункты меню
+                // (папки, поиск, уведомления) трогать нельзя.
+                bool addVerb = name.StartsWith( "Добавить" , StringComparison.OrdinalIgnoreCase ) ||
+                               name.StartsWith( "Add" , StringComparison.OrdinalIgnoreCase ) ||
+                               name.StartsWith( "Añadir" , StringComparison.OrdinalIgnoreCase ) ||
+                               name.StartsWith( "Hinzufügen" , StringComparison.OrdinalIgnoreCase );
+
+                bool quickAccess = name.IndexOf( "быстрого доступа" , StringComparison.OrdinalIgnoreCase ) >= 0 ||
+                                   name.IndexOf( "Quick Access" , StringComparison.OrdinalIgnoreCase ) >= 0;
+
+                if ( addVerb && quickAccess )
+                {
+                    return item;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>Проверяет, что кнопка уже закреплена: её экземпляр есть выше строки вкладок.</summary>
+        private static bool IsPinned( AutomationElement window , AutomationElement tab , string label )
+        {
+            double tabsTop = double.MaxValue;
+
+            try
+            {
+                tabsTop = tab.Current.BoundingRectangle.Top;
+            }
+            catch
+            {
+            }
+
             var condition = new AndCondition(
                 new PropertyCondition( AutomationElement.NameProperty , label ) ,
                 new PropertyCondition( AutomationElement.ControlTypeProperty , ControlType.Button ) );
 
-            int count = 0;
             foreach ( AutomationElement item in window.FindAll( TreeScope.Descendants , condition ) )
             {
+                System.Windows.Rect rect;
+
                 try
                 {
-                    if ( item.Current.BoundingRectangle.Width > 2 )
-                    {
-                        count++;
-                    }
+                    rect = item.Current.BoundingRectangle;
                 }
                 catch
                 {
+                    continue;
+                }
+
+                if ( rect.Width < 4 || rect.Height < 4 )
+                {
+                    continue;
+                }
+
+                // Кнопка панели быстрого доступа стоит в заголовке окна — выше строки вкладок,
+                // а кнопка на самой ленте — ниже. Так копия на ленте не считается закреплённой.
+                if ( tabsTop < double.MaxValue && rect.Bottom <= tabsTop + 2 )
+                {
+                    return true;
+                }
+
+                if ( InsideQuickAccessBar( item ) )
+                {
+                    return true;
                 }
             }
-            return count;
+
+            return false;
+        }
+
+        /// <summary>Резервная проверка: не относится ли кнопка к контейнеру панели быстрого доступа.</summary>
+        private static bool InsideQuickAccessBar( AutomationElement element )
+        {
+            try
+            {
+                TreeWalker walker = TreeWalker.ControlViewWalker;
+                AutomationElement node = element;
+
+                for ( int i = 0 ; i < 6 && node != null ; i++ )
+                {
+                    string name = node.Current.Name ?? "";
+                    string className = node.Current.ClassName ?? "";
+
+                    if ( node.Current.ControlType == ControlType.ToolBar &&
+                         ( name.IndexOf( "быстрого доступа" , StringComparison.OrdinalIgnoreCase ) >= 0 ||
+                           name.IndexOf( "Quick Access" , StringComparison.OrdinalIgnoreCase ) >= 0 ) )
+                    {
+                        return true;
+                    }
+
+                    if ( className.IndexOf( "QuickAccess" , StringComparison.OrdinalIgnoreCase ) >= 0 )
+                    {
+                        return true;
+                    }
+
+                    node = walker.GetParent( node );
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
         }
 
         private static AutomationElement WaitFor( AutomationElement parent , ControlType type , string name , int timeoutMs )
@@ -510,6 +622,14 @@ namespace TelegramShareAddin
             keybd_event( VkEscape , 0 , KeyUp , UIntPtr.Zero );
         }
 
+        private static void SendShiftF10( )
+        {
+            keybd_event( VkShift , 0 , 0 , UIntPtr.Zero );
+            keybd_event( VkF10 , 0 , 0 , UIntPtr.Zero );
+            keybd_event( VkF10 , 0 , KeyUp , UIntPtr.Zero );
+            keybd_event( VkShift , 0 , KeyUp , UIntPtr.Zero );
+        }
+
         private static void SendCtrlF1( )
         {
             keybd_event( VkControl , 0 , 0 , UIntPtr.Zero );
@@ -527,9 +647,11 @@ namespace TelegramShareAddin
         private const uint LeftDown = 0x0002;
         private const uint LeftUp = 0x0004;
         private const uint KeyUp = 0x0002;
+        private const byte VkShift = 0x10;
         private const byte VkControl = 0x11;
         private const byte VkEscape = 0x1B;
         private const byte VkF1 = 0x70;
+        private const byte VkF10 = 0x79;
         private const int SwRestore = 9;
         private const uint GaRoot = 2;
 
