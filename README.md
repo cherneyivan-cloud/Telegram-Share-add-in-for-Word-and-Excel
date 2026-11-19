@@ -7,9 +7,9 @@
 
 **Скачать:** [Releases](https://github.com/cherneyivan-cloud/Telegram-Share-add-in-for-Word-and-Excel/releases) → `TelegramShareAddin.zip` → распаковать → запустить `install.bat` (без прав администратора).
 
-Работает через локальные приложения Telegram Desktop и MAX (без Bot API(:, через буфер обмена, SendKeys и UI Automation.
+Работает через локальные приложения Telegram Desktop и MAX (без Bot API), через буфер обмена, SendKeys и UI Automation.
 
-Поддерживает 64-битный Microsoft Word (LTSC MSO 16.0.14332.20296 и новее(.
+Поддерживает 64-битный Microsoft Word (LTSC MSO 16.0.14332.20296 и новее).
 
 
 
@@ -17,7 +17,7 @@
 
 | Файл | Назначение |
 | --- | --- |
-| `src\TelegramShareAddin\` | Исходный код надстройки (C# / .NET Framework 4.8( |
+| `src\TelegramShareAddin\` | Исходный код надстройки (C# / .NET Framework 4.8) |
 | `TelegramShareAddin.sln` | Решение Visual Studio |
 | `scripts\install.ps1` | Установка без прав администратора |
 | `scripts\uninstall.ps1` | Удаление |
@@ -27,32 +27,32 @@
 
 ## Требования
 
-- Windows 10/11, Microsoft Word 64-битный (LTSC/Office 2019/2021/365((
-- .NET Framework 4.8 (входит в состав Windows, при необходимости ставится с сайта Microsoft(
-- Telegram Desktop (64-битный(, установленный и авторизованный — для Telegram
+- Windows 10/11, Microsoft Word 64-битный (LTSC/Office 2019/2021/365)
+- .NET Framework 4.8 (входит в состав Windows, при необходимости ставится с сайта Microsoft)
+- Telegram Desktop (64-битный), установленный и авторизованный — для Telegram
 - MAX для Windows, установленный и авторизованный — для MAX
-- Visual Studio 2019 или 2022 (workload «Разработка классических приложений .NET» + доступ к NuGet( для сборки
+- Visual Studio 2019 или 2022 (workload «Разработка классических приложений .NET» + доступ к NuGet) для сборки
 
 
 
 ## Сборка в Visual Studio
 
 1. Откройте `TelegramShareAddin.sln`
-2. Дождитесь восстановления пакетов NuGet (`Microsoft.Office.Interop.Word` 15.0.4797.1004 и `Newtonsoft.Json` 13.0.4(**.
+2. Дождитесь восстановления пакетов NuGet (`Microsoft.Office.Interop.Word` 15.0.4797.1004 и `Newtonsoft.Json` 13.0.4).
    Если восстановление не запустилось автоматически: ПКМ на решение → *Restore NuGet Packages*.
 3. Выберите конфигурацию **Release**.
-4. Соберите решение (*Build → Build Solution* либо `Ctrl+Shift+B`**.
+4. Соберите решение (*Build → Build Solution* либо `Ctrl+Shift+B`).
 
 Результат появится здесь:
 
 - `src\TelegramShareAddin\bin\Release\TelegramShareAddin.dll`
 - `src\TelegramShareAddin\bin\Release\Newtonsoft.Json.dll`
 - `src\TelegramShareAddin\bin\Release\Microsoft.Office.Interop.Word.dll`
-- и сопутствующие файлы。
+- и сопутствующие файлы.
 
 
 
-Сборка из командной строки (опционально(:
+Сборка из командной строки (опционально):
 
 ```powershell
 cd C:\путь\к\решению
@@ -65,7 +65,7 @@ msbuild TelegramShareAddin.sln /p:Configuration=Release /p:Platform="Any CPU" /m
 
 ## Установка
 
-Перед установкой закройте Microsoft Word (или перезапустите его после установки(.
+Перед установкой закройте Microsoft Word (или перезапустите его после установки).
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
@@ -73,7 +73,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
 
 Скрипт:
 
-- найдёт собранную DLL автоматически в `src\TelegramShareAddin\bin\(x64\)\Release\`, либо примите путь через параметр:
+- найдёт собранную DLL автоматически в `src\TelegramShareAddin\bin\x64\Release` (или `bin\Release`), либо примет путь через параметр:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -SourcePath .\src\TelegramShareAddin\bin\Release
@@ -81,9 +81,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1 -SourcePath .\src
 
 - скопирует файлы в `%APPDATA%\TelegramShareAddin\`
 - зарегистрирует COM-объект в `HKCU\Software\Classes\CLSID\{AD3B6C2F-4E5F-4A8B-9C1D-3E4F5A6B7C8D}\InprocServer32` и ProgId `TelegramShareAddin`
-- создаст ключ `HKCU\Software\Microsoft\Office\Word\Addins\TelegramShareAddin` значение `LoadBehavior = 3` (автозагрузка(
+- создаст ключ `HKCU\Software\Microsoft\Office\Word\Addins\TelegramShareAddin` со значением `LoadBehavior = 3` (автозагрузка)
 
-Права администратора не требуются: всё пишется в куст реестра текущего пользователя (HKCU(**. Telegram не затрагивается вообще.
+Права администратора не требуются: всё пишется в куст реестра текущего пользователя (HKCU). Telegram не затрагивается вообще.
 
 
 
@@ -110,25 +110,25 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1 -RemoveFiles
 1. Откройте документ в Word.
 2. На ленте появится вкладка **Telegram Share** → кнопка **Отправить в Telegram**.
 3. Укажите контакт:
-   - `@username` или `username`（например, `@durov`),
-   - номер телефона с `+`（например, `+79123456789`),
-   - числовой ID пользователя（например, `123456789`; узнать можно через бота `@userinfobot`(**.
-4. При желании добавьте сообщение（оно станет подписью к файлу( и выберите формат:
-   - **PDF (рекомендуется** — документ экспортируется в PDF;
-   - **DOCX (копия** — создаётся копия файла документа.
+   - `@username` или `username` (например, `@durov`),
+   - номер телефона с `+` (например, `+79123456789`),
+   - числовой ID пользователя (например, `123456789`; узнать можно через бота `@userinfobot`).
+4. При желании добавьте сообщение (оно станет подписью к файлу) и выберите формат:
+   - **PDF** (рекомендуется) — документ экспортируется в PDF;
+   - **DOCX** (копия) — создаётся копия файла документа.
 
 5. Нажмите **Отправить**.
 
 Что произойдёт автоматически:
 
-- Word сохранит документ во временный файл в `%TEMP%`（.pdf/.docx(;
+- Word сохранит документ во временный файл в `%TEMP%` (`.pdf`/`.docx`);
 - файл попадёт в буфер обмена как файл **вместе с полным путём текстом**;
-- откроется Telegram Desktop (при необходимости через протокол `tg://`( или MAX, откроется чат с контактом;
-- надстройка подождёт（настройка, по умолчанию 2.5 с**, затем сделает фокус на окно мессенджера、 вставит файл (`Ctrl+V`(, добавит подпись и отправит сообщение.
+- откроется Telegram Desktop (при необходимости через протокол `tg://`) или MAX, откроется чат с контактом;
+- надстройка подождёт настройку (по умолчанию 2.5 с), затем сделает фокус на окно мессенджера, вставит файл (`Ctrl+V`), добавит подпись и отправит сообщение.
 
-**Важно**: во время автоматической отправки (несколько секунд** не переключайте окна и не печатайте — клавиши уйдут в активное окно.
+**Важно**: во время автоматической отправки (несколько секунд) не переключайте окна и не печатайте — клавиши уйдут в активное окно.
 
-После сохранения **полный путь к файлу остаётся в буфере обмена** — его можно вставить в любое текстовое поле (`Ctrl+V`**. В мессенджере `Ctrl+V` по-прежнему вставляет сам файл. Временные файлы автоматически вычищаются из `%TEMP%\TelegramShare` при следующих отправках (старше суток**.
+После сохранения **полный путь к файлу остаётся в буфере обмена** — его можно вставить в любое текстовое поле (`Ctrl+V`). В мессенджере `Ctrl+V` по-прежнему вставляет сам файл. Временные файлы автоматически вычищаются из `%TEMP%\TelegramShare` при следующих отправках (старше суток).
 
 
 
@@ -165,7 +165,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1 -RemoveFiles
 
 ## Настройки
 
-Файл конфигурации: `%APPDATA%\TelegramShareAddin\config.json`（создаётся автоматически(**:
+Файл конфигурации: `%APPDATA%\TelegramShareAddin\config.json` (создаётся автоматически):
 
 ```json
 {
@@ -183,8 +183,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1 -RemoveFiles
 | `ChatOpenDelayMs` | Задержка после открытия чата перед вставкой файла, мс | 2500 |
 | `PasteDelayMs` | Пауза после вставки файла перед набором подписи, мс | 1200 |
 | `RecentContacts` | История контактов для автодополнения | |
-| `LastFormat` | Последний формат («PDF» / «DOCX»( | PDF |
-| `LastMessenger` | Последний мессенджер («Telegram» / «MAX»( | Telegram |
+| `LastFormat` | Последний формат («PDF» / «DOCX») | PDF |
+| `LastMessenger` | Последний мессенджер («Telegram» / «MAX») | Telegram |
 | `RememberContact` | Запоминать контакт и формат | true |
 
 ## Обновление
@@ -195,12 +195,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1 -RemoveFiles
 
 ## Архитектура и технические детали
 
-- Класс `Addin` реализует `IDTExtensibility2`（жизненный цикл COM-надстройки（ и `IRibbonExtensibility`（лента(**. Интерфейс `IDTExtensibility2` объявлен в коде самостоятельно—— это убирает зависимость от COM-библиотеки «Extensibility»（Extensibility.tlb(.
-- Лента задаётся декларативно (XML customUI(;callback кнопки:`TelegramShareAddin.Addin.OnSendButton`（вызов через IDispatch(**.
-- Отправка идёт без Bot API:: глубокие ссылки `tg://resolve?domain=...`, `tg://resolve?phone=...`, `tg://user?id=...и** + буфер обмена（`Clipboard.SetFileDropList`( + `SendKeys`（`^v`, подпись, `{ENTER}`(。
-- Настройки — Newtonsoft.Json, `%APPDATA%\TelegramShareAddin\config.json`。 Сборка Newtonsoft.Json.dll грузится из папки надстройки через `AssemblyResolve`, поэтому не зависит от версий, уже загруженных хостом.
+- Класс `Addin` реализует `IDTExtensibility2` (жизненный цикл COM-надстройки) и `IRibbonExtensibility` (лента). Интерфейс `IDTExtensibility2` берётся из `Extensibility.dll`, а не объявляется вручную — у настоящего метода DispId 1–5, иначе Word создаёт объект, но не вызывает `OnConnection`.
+- Лента задаётся декларативно (XML customUI); callback кнопки: `TelegramShareAddin.Addin.OnSendButton` (вызов через IDispatch).
+- Отправка идёт без Bot API: глубокие ссылки `tg://resolve?domain=...`, `tg://resolve?phone=...`, `tg://user?id=...` + буфер обмена (`Clipboard.SetFileDropList`) + `SendKeys` (`^v`, подпись, `{ENTER}`).
+- Настройки — Newtonsoft.Json, `%APPDATA%\TelegramShareAddin\config.json`. Сборка Newtonsoft.Json.dll грузится из папки надстройки через `AssemblyResolve`, поэтому не зависит от версий, уже загруженных хостом.
 
-- Сборка: .NET Framework 4.8, `x64`（обязательно для 64-битного Word(, без strong-name, COM-регистрация пользовательская（в `HKCU`**.
+- Сборка: .NET Framework 4.8, `x64` (обязательно для 64-битного Word), без strong-name, COM-регистрация пользовательская (в `HKCU`).
 
 
 
@@ -210,24 +210,23 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1 -RemoveFiles
 
 1. Проверьте установку: `scripts\check_install.ps1`.
 2. Убедитесь, что надстройка включена в Word: *Файл → Параметры → Надстройки → Перейти… → Надстройки COM* → галочка у `TelegramShareAddin`.
-3. Перезапустите Word полностью（и, если нужно, ПК（.
-4. Если Word 32-битный — проект не загрузится;требуется 64-битная версия Office（см. требования（.
+3. Перезапустите Word полностью (и, если нужно, ПК).
+4. Если Word 32-битный — проект не загрузится; требуется 64-битная версия Office (см. требования).
 
 
 
 **Ошибка: «Не удалось открыть Telegram»**
 
 - Убедитесь, что Telegram Desktop установлен и выполнен вход;
-- убедитесь, что `tg://` ссылки открывают Telegram（Параметры → Система → обработчик протоколов（.
-
-иетки「или попробуйте запустить из PowerShell: `Start-Process "tg://resolve?domain=durov"`.
+- убедитесь, что `tg://` ссылки открывают Telegram (Параметры → Система → обработчик протоколов);
+- проверьте обработчик протокола или запустите ссылку из PowerShell: `Start-Process "tg://resolve?domain=durov"`.
 
 
 
 **Ошибка: «Не найдено окно Telegram Desktop»**
 
-- Откройте главное окно Telegram（оно должно быть развёрнуто, а не свёрнуто в трей（ и повторите;
-- увеличьте `ChatOpenDelayMs` в конфиге（например, 4000–6000（.
+- Откройте главное окно Telegram (оно должно быть развёрнуто, а не свёрнуто в трей) и повторите;
+- увеличьте `ChatOpenDelayMs` в конфиге (например, 4000–6000).
 
 
 
@@ -238,17 +237,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1 -RemoveFiles
 - для username используется ссылка `max://max.ru/<username>` — указывайте его явно, через `@` (например, `@support`);
 - если чат не находится, откройте его в MAX вручную и повторите отправку.
 
-**Контact не открылся/«контакт не найден»**
+**Контакт не открылся / «контакт не найден»**
 
-- Проверьте точный username（в Telegram имена — латиница和 цифры（;
-- для номера телефона начните с `+`（например, `+79123456789`（;
-- если `phone`-ссылка не сработала（не для всех клиентов, используйте username или ID（через `@userinfobot`（и числовой ID（.
+- Проверьте точный username (в Telegram имена — латиница и цифры);
+- для номера телефона начните с `+` (например, `+79123456789`);
+- если `phone`-ссылка не сработала (не для всех клиентов), используйте username или ID (через `@userinfobot` и числовой ID).
 
 
 
 **Файл очень большой**
 
-Telegram Desktop сам предложит сжатие/подтверждение при отправке больших файлов（лимиты Telegram: до 2 GB на ботах/премиум, 2 GB на десктопе без лимита по размеру для обычных чатов（. Отправка займёт больше времени；надстройка не ждёт завершения загрузки——печатать/нажимать больше не нужно, Telegram сам отправит файл после загрузкии.
+Telegram Desktop сам предложит сжатие/подтверждение при отправке больших файлов (лимиты Telegram: до 2 GB на ботах/премиум, 2 GB на десктопе без лимита по размеру для обычных чатов). Отправка займёт больше времени; надстройка не ждёт завершения загрузки — печатать/нажимать больше не нужно, Telegram сам отправит файл после загрузки.
 
 
 
@@ -260,9 +259,9 @@ Telegram Desktop сам предложит сжатие/подтверждени
 
 ## Что не поддерживается
 
-- Telegram Bot API（сознательно, по ТЗ（;
+- Telegram Bot API (сознательно, по ТЗ);
 - отправка нескольких файлов сразу;
-- scheduling/очередь—— всё делается синхронно при нажатии кнопки（несколько секунд блокировки формы（.
+- scheduling/очередь — всё делается синхронно при нажатии кнопки (несколько секунд блокировки формы).
 
 
 
