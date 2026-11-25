@@ -78,12 +78,12 @@ namespace TelegramShareAddin
             }
         }
 
-        public static void CheckAndInstall( )
+        public static async void CheckAndInstall( )
         {
             try
             {
                 Cursor.Current = Cursors.WaitCursor;
-                ReleaseInfo release = GetLatestRelease( );
+                ReleaseInfo release = await GetLatestReleaseAsync( );
                 Cursor.Current = Cursors.Default;
 
                 if ( release == null || release.Version == null )
@@ -128,7 +128,7 @@ namespace TelegramShareAddin
                     Directory.CreateDirectory( updateRoot );
 
                     string zipPath = Path.Combine( updateRoot , AssetName );
-                    byte[] package = Download( release.AssetUrl );
+                    byte[] package = await Http.GetByteArrayAsync( release.AssetUrl );
                     VerifyDigest( release.Digest , package );
                     File.WriteAllBytes( zipPath , package );
 
@@ -174,20 +174,13 @@ namespace TelegramShareAddin
             }
         }
 
-        private static byte[] Download( string url )
-        {
-            // Загрузка идёт в фоне: таймаут HttpClient не блокирует UI-поток бесконечно.
-            return Task.Run( ( ) => Http.GetByteArrayAsync( url ) ).GetAwaiter( ).GetResult( );
-        }
-
         /// <summary>Сверяет SHA-256 архива с дайджестом из GitHub Releases.</summary>
         private static void VerifyDigest( string digest , byte[] package )
         {
             if ( string.IsNullOrEmpty( digest ) )
             {
-                // Старые релизы дайджеста не содержат: установку не блокируем, но фиксируем в логе.
-                AddinLog.Warn( "Дайджест обновления не опубликован — проверка целостности пропущена" );
-                return;
+                // Без контрольной суммы установку не начинаем.
+                throw new InvalidOperationException( "Релиз не содержит контрольной суммы — установка отменена." );
             }
 
             const string prefix = "sha256:";
@@ -209,9 +202,9 @@ namespace TelegramShareAddin
             }
         }
 
-        private static ReleaseInfo GetLatestRelease( )
+        private static async Task<ReleaseInfo> GetLatestReleaseAsync( )
         {
-            string json = Task.Run( ( ) => Http.GetStringAsync( LatestReleaseUrl ) ).GetAwaiter( ).GetResult( );
+            string json = await Http.GetStringAsync( LatestReleaseUrl );
             JObject root = JObject.Parse( json );
             string tag = (string) root[ "tag_name" ];
 

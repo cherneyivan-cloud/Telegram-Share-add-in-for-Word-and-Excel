@@ -1,6 +1,6 @@
 ﻿using System;
-using System.IO;
 using System.Runtime.InteropServices;
+using System.IO;
 using Extensibility;
 using Microsoft.Office.Core;
 using Excel = Microsoft.Office.Interop.Excel;
@@ -95,19 +95,19 @@ namespace TelegramShareAddin
         public void OnSendButton( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendMessage( _settings , BuildRequest( ) , Messenger.Telegram );
+            AddinCore.SendMessage( _settings , AddinCore.CreateRequest( HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true ) , Messenger.Telegram );
         }
 
         public void OnSendMax( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendMessage( _settings , BuildRequest( ) , Messenger.Max );
+            AddinCore.SendMessage( _settings , AddinCore.CreateRequest( HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true ) , Messenger.Max );
         }
 
         public void OnSendViaTelegram( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendVia( _settings , BuildRequest( ) );
+            AddinCore.SendVia( _settings , AddinCore.CreateRequest( HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true ) );
         }
 
         public void OnPinToQat( IRibbonControl control )
@@ -130,17 +130,6 @@ namespace TelegramShareAddin
             }
         }
 
-        private SendRequest BuildRequest( )
-        {
-            return new SendRequest
-            {
-                HasDocument = HasOpenDocument ,
-                SaveDocument = SaveActiveDocument ,
-                NoDocumentMessage = NoDocumentMessage ,
-                NativeLabel = NativeLabel ,
-                AllowPdf = true
-            };
-        }
 
         private bool HasOpenDocument( )
         {

@@ -6,10 +6,19 @@
 #>
 param(
     [string]$SourcePath = "",
-    [switch]$Yes
+    [switch]$Yes,
+    [switch]$IgnoreRunningOffice
 )
 
 $ErrorActionPreference = "Stop"
+
+# Office держит DLL открытыми: установка «наполовину» хуже, чем отказ.
+$running = Get-Process -Name WINWORD,EXCEL,OUTLOOK -ErrorAction SilentlyContinue
+if ( $running -and -not $IgnoreRunningOffice ) {
+    Write-Host "Word, Excel или Outlook запущены. Закройте их и запустите установку снова." -ForegroundColor Red
+    Write-Host ( "  запущено: " + ( ( $running | Select-Object -ExpandProperty ProcessName -Unique ) -join ", " ) ) -ForegroundColor DarkGray
+    exit 1
+}
 
 $InstallDir = Join-Path $env:APPDATA "TelegramShareAddin"
 
@@ -55,7 +64,10 @@ function Register-Addin( $progId, $clsid, $className, $assemblyName, $dllPath, $
     }
     Set-ItemProperty -Path $inprocKey -Name "Assembly" -Value ( $assemblyName + ", Version=" + $asmVersion + ", Culture=neutral, PublicKeyToken=null" )
     Set-ItemProperty -Path $inprocKey -Name "RuntimeVersion" -Value "v4.0.30319"
-    Set-ItemProperty -Path $inprocKey -Name "CodeBase" -Value ( "file:///" + ( $dllPath -replace "\\", "/" ) )
+
+    # CodeBase — URL: пробелы в пути должны быть закодированы, иначе Office не загрузит DLL.
+    $codeBase = ( [Uri]$dllPath ).AbsoluteUri
+    Set-ItemProperty -Path $inprocKey -Name "CodeBase" -Value $codeBase
 
     $progKey = "HKCU:\Software\Classes\$progId"
     New-Item -Path $progKey -Force | Out-Null

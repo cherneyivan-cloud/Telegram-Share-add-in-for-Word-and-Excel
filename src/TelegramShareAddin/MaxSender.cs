@@ -47,7 +47,7 @@ namespace TelegramShareAddin
 
             try
             {
-                IntPtr hwnd = MaxUi.EnsureWindow( 15000 );
+                IntPtr hwnd = MaxUi.EnsureWindow( Timeouts.WindowWaitMs );
                 UiWin.EnsureForeground( hwnd );
                 Thread.Sleep( 700 );
 
@@ -56,7 +56,7 @@ namespace TelegramShareAddin
 
                 if ( options.OpenByChatName )
                 {
-                    opened = MaxUi.OpenChat( pid , contact , 8000 );
+                    opened = MaxUi.OpenChat( pid , contact , Timeouts.ChatOpenMs );
                 }
 
                 // Ссылку max://max.ru/<username> используем только для явно указанного
@@ -68,7 +68,7 @@ namespace TelegramShareAddin
                     if ( username != null && MaxUi.OpenByUsername( username ) )
                     {
                         Thread.Sleep( _settings.ChatOpenDelay );
-                        hwnd = MaxUi.EnsureWindow( 15000 );
+                        hwnd = MaxUi.EnsureWindow( Timeouts.WindowWaitMs );
                         UiWin.EnsureForeground( hwnd );
                         pid = MaxUi.GetProcessId( hwnd );
                         opened = true;
@@ -77,7 +77,7 @@ namespace TelegramShareAddin
 
                 if ( !opened )
                 {
-                    opened = MaxUi.OpenChat( pid , contact , 8000 );
+                    opened = MaxUi.OpenChat( pid , contact , Timeouts.ChatOpenMs );
                 }
 
                 if ( !opened )
@@ -102,7 +102,7 @@ namespace TelegramShareAddin
 
                 UiWin.SendKeysTo( pid , "^v" , "MAX" );
 
-                if ( !MaxUi.WaitForPendingAttachment( hwnd , 12000 ) )
+                if ( !MaxUi.WaitForPendingAttachment( hwnd , Timeouts.AttachmentMs ) )
                 {
                     throw new InvalidOperationException( "MAX не принял файл из буфера обмена. Откройте чат в MAX и повторите." );
                 }
@@ -114,7 +114,7 @@ namespace TelegramShareAddin
                     Thread.Sleep( 600 );
                 }
 
-                if ( !MaxUi.Send( hwnd , 12000 ) )
+                if ( !MaxUi.Send( hwnd , Timeouts.AttachmentMs ) )
                 {
                     throw new InvalidOperationException( "Не удалось отправить файл в MAX. Проверьте окно MAX и повторите." );
                 }
@@ -253,18 +253,6 @@ namespace TelegramShareAddin
             throw new InvalidOperationException( "Не найдено окно MAX. Запустите MAX и повторите." );
         }
 
-        public static void Activate( IntPtr hwnd )
-        {
-            try
-            {
-                ShowWindow( hwnd , SW_RESTORE );
-                SetForegroundWindow( hwnd );
-            }
-            catch
-            {
-            }
-        }
-
         public static int GetProcessId( IntPtr hwnd )
         {
             int pid;
@@ -331,10 +319,15 @@ namespace TelegramShareAddin
         /// <summary>Кэш списка чатов: повторное открытие диалога не дёргает MAX.</summary>
         public static List<MessengerChatInfo> GetChats( int pid )
         {
-            return GetChats( pid , false );
+            return GetChats( pid , false , CancellationToken.None );
         }
 
         public static List<MessengerChatInfo> GetChats( int pid , bool refresh )
+        {
+            return GetChats( pid , refresh , CancellationToken.None );
+        }
+
+        public static List<MessengerChatInfo> GetChats( int pid , bool refresh , CancellationToken token )
         {
             if ( !refresh && _cachedChats != null && _cachePid == pid &&
                  ( DateTime.UtcNow - _cacheTime ).TotalMinutes < 5 )
@@ -342,7 +335,7 @@ namespace TelegramShareAddin
                 return new List<MessengerChatInfo>( _cachedChats );
             }
 
-            List<MessengerChatInfo> chats = ReadChats( pid );
+            List<MessengerChatInfo> chats = ReadChats( pid , token );
             if ( chats.Count > 0 )
             {
                 _cachedChats = chats;
@@ -353,7 +346,7 @@ namespace TelegramShareAddin
             return chats;
         }
 
-        private static List<MessengerChatInfo> ReadChats( int pid )
+        private static List<MessengerChatInfo> ReadChats( int pid , CancellationToken token )
         {
             var result = new List<MessengerChatInfo>( );
             var seen = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
@@ -378,6 +371,11 @@ namespace TelegramShareAddin
 
                 for ( double v = 0 ; v <= 100 ; v += 5 )
                 {
+                    if ( token.IsCancellationRequested )
+                    {
+                        return result;
+                    }
+
                     try { range.SetValue( v ); } catch { }
                     Thread.Sleep( 60 );
 
@@ -401,7 +399,7 @@ namespace TelegramShareAddin
 
             ScrollToTop( hwnd );
 
-            int added = CollectChats( hwnd , result , seen );
+            int added = CollectChats( hwnd , result , seen , token );
 
             // При «холодном» старте первая прокрутка может не сработать. Повторяем.
             if ( added < 15 )
@@ -409,7 +407,7 @@ namespace TelegramShareAddin
                 Thread.Sleep( 600 );
                 result.Clear( );
                 seen.Clear( );
-                CollectChats( hwnd , result , seen );
+                CollectChats( hwnd , result , seen , token );
             }
 
             // Возвращаем список к началу.
@@ -446,7 +444,7 @@ namespace TelegramShareAddin
         }
 
         /// <summary>Листает список вниз и добавляет в result/seen новые чаты.</summary>
-        private static int CollectChats( IntPtr hwnd , List<MessengerChatInfo> result , HashSet<string> seen )
+        private static int CollectChats( IntPtr hwnd , List<MessengerChatInfo> result , HashSet<string> seen , CancellationToken token )
         {
             int pid = GetProcessId( hwnd );
             int before = result.Count;
@@ -459,6 +457,11 @@ namespace TelegramShareAddin
 
             for ( int pass = 0; pass < MaxPasses; pass++ )
             {
+                if ( token.IsCancellationRequested )
+                {
+                    break;
+                }
+
                 List<string> visibleNames = ReadVisibleNames( pid );
                 string signature = string.Join( "\u001f" , visibleNames );
 
@@ -542,6 +545,28 @@ namespace TelegramShareAddin
 
         public static void FocusComposer( IntPtr hwnd )
         {
+            // Основной путь — поле ввода, найденное через UI Automation.
+            AutomationElement composer = FindComposer( hwnd );
+            if ( composer != null )
+            {
+                try
+                {
+                    composer.SetFocus( );
+                    AddinLog.Info( "MAX: фокус в поле ввода через UIA" );
+                    return;
+                }
+                catch ( Exception ex )
+                {
+                    AddinLog.Warn( "MAX: SetFocus на поле ввода не сработал — " + AddinLog.Describe( ex ) );
+                }
+
+                if ( UiWin.ClickElement( composer ) )
+                {
+                    return;
+                }
+            }
+
+            // Резервный путь: клик слева от кнопки отправки.
             AutomationElement button = RightmostSendButton( hwnd );
             if ( button == null )
             {
@@ -555,6 +580,8 @@ namespace TelegramShareAddin
                 return;
             }
 
+            AddinLog.Warn( "MAX: поле ввода не найдено, кликаю по резервной точке" );
+
             int x = (int)( buttonRect.Left - 300 );
             int y = (int)( buttonRect.Top + buttonRect.Height / 2 );
 
@@ -564,6 +591,63 @@ namespace TelegramShareAddin
             }
 
             ClickAt( x , y );
+        }
+
+        /// <summary>Поле ввода сообщения: Edit/Document в нижней половине окна.</summary>
+        private static AutomationElement FindComposer( IntPtr hwnd )
+        {
+            int pid = GetProcessId( hwnd );
+            if ( pid == 0 )
+            {
+                return null;
+            }
+
+            foreach ( AutomationElement window in TopWindows( pid ) )
+            {
+                System.Windows.Rect windowRect;
+                if ( !TryGetRect( window , out windowRect ) )
+                {
+                    continue;
+                }
+
+                double middle = windowRect.Top + windowRect.Height / 2;
+
+                foreach ( ControlType type in new[ ] { ControlType.Edit , ControlType.Document } )
+                {
+                    var condition = new PropertyCondition( AutomationElement.ControlTypeProperty , type );
+                    AutomationElementCollection candidates = window.FindAll( TreeScope.Descendants , condition );
+
+                    AutomationElement best = null;
+                    double widest = 0;
+
+                    foreach ( AutomationElement candidate in candidates )
+                    {
+                        System.Windows.Rect rect;
+                        if ( !TryGetRect( candidate , out rect ) )
+                        {
+                            continue;
+                        }
+
+                        if ( rect.Top < middle || rect.Width < 200 || rect.Height < 20 )
+                        {
+                            continue;
+                        }
+
+                        if ( rect.Width > widest )
+                        {
+                            widest = rect.Width;
+                            best = candidate;
+                        }
+                    }
+
+                    if ( best != null )
+                    {
+                        return best;
+                    }
+                }
+            }
+
+            return null;
         }
 
         public static bool WaitForPendingAttachment( IntPtr hwnd , int timeoutMs )

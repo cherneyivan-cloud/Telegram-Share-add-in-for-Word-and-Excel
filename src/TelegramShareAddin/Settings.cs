@@ -17,9 +17,6 @@ namespace TelegramShareAddin
     {
         public const string AppName = "TelegramShareAddin";
 
-        /// <summary>Сообщение последней неудачной загрузки (null — ошибок не было).</summary>
-        public static string LastLoadError { get; private set; }
-
         public static string ConfigDirectory
         {
             get
@@ -88,23 +85,26 @@ namespace TelegramShareAddin
         }
 
 
-        /// <summary>Загрузить настройки. Ошибки не показываются: они попадают в лог и в LastLoadError.</summary>
+        /// <summary>Загрузить настройки. Ошибки попадают в лог; битый файл сохраняется как .broken.</summary>
         public static Settings Load( )
         {
-            LastLoadError = null;
-
-            Settings loaded = ReadFile( ConfigFilePath );
+            // 1. Рабочий файл, 2. резервная копия рядом с ним.
+            Settings loaded = ReadFile( ConfigFilePath ) ?? ReadFile( ConfigFilePath + ".bak" );
             if ( loaded != null )
             {
                 return loaded;
             }
 
-            loaded = ReadFile( LegacyConfigFilePath );
-            if ( loaded != null )
+            // 3. Прежнее расположение — только если нового файла ещё нет (первый запуск).
+            if ( !File.Exists( ConfigFilePath ) )
             {
-                AddinLog.Info( "Настройки перенесены из " + LegacyConfigFilePath );
-                loaded.Save( );
-                return loaded;
+                loaded = ReadFile( LegacyConfigFilePath );
+                if ( loaded != null )
+                {
+                    AddinLog.Info( "Настройки перенесены из " + LegacyConfigFilePath );
+                    loaded.Save( );
+                    return loaded;
+                }
             }
 
             return new Settings( );
@@ -130,8 +130,7 @@ namespace TelegramShareAddin
             }
             catch ( Exception ex )
             {
-                LastLoadError = "Не удалось загрузить настройки (" + path + "): " + AddinLog.Describe( ex );
-                AddinLog.Error( LastLoadError );
+                AddinLog.Error( "Не удалось загрузить настройки (" + path + ")" , ex );
 
                 // Битый файл не выбрасываем: пользователь сможет достать из него контакты.
                 TryBackupBroken( path );

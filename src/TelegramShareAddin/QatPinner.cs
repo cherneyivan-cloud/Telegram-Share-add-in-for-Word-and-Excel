@@ -20,14 +20,23 @@ namespace TelegramShareAddin
         private static readonly string[ ] ButtonLabels = { RibbonLabels.SendMessage , RibbonLabels.Max };
 
         private static int _running;
+        private static SynchronizationContext _uiContext;
 
         /// <summary>Запускает добавление кнопок в фоновом потоке, чтобы не блокировать окно Office.</summary>
         public static void Start( )
         {
             if ( Interlocked.CompareExchange( ref _running , 1 , 0 ) != 0 )
             {
+                MessageBox.Show(
+                    "Добавление кнопок уже выполняется — подождите пару секунд." ,
+                    "Telegram Share" ,
+                    MessageBoxButtons.OK ,
+                    MessageBoxIcon.Information );
                 return;
             }
+
+            // Сообщения показываем в UI-потоке Office, иначе окно может оказаться позади.
+            _uiContext = SynchronizationContext.Current;
 
             IntPtr foreground = GetForegroundWindow( );
             ThreadPool.QueueUserWorkItem( state => Run( (IntPtr) state ) , foreground );
@@ -570,50 +579,37 @@ namespace TelegramShareAddin
                        "и выберите «Добавить на панель быстрого доступа».";
             }
 
-            MessageBox.Show( text , "Telegram Share" , MessageBoxButtons.OK , MessageBoxIcon.Information );
+            ShowMessage( text , MessageBoxIcon.Information );
         }
 
         private static void Fail( )
         {
-            MessageBox.Show(
+            ShowMessage(
                 "Не удалось добавить кнопки в заголовок окна." + Environment.NewLine + Environment.NewLine +
                 "Щёлкните правой кнопкой мыши по кнопке «Отправить в Telegram» на вкладке «Отправить» " +
                 "и выберите «Добавить на панель быстрого доступа»." ,
-                "Telegram Share" , MessageBoxButtons.OK , MessageBoxIcon.Warning );
+                MessageBoxIcon.Warning );
+        }
+
+        /// <summary>Показывает сообщение в UI-потоке Office (иначе окно уходит за приложение).</summary>
+        private static void ShowMessage( string text , MessageBoxIcon icon )
+        {
+            Action show = ( ) => MessageBox.Show( text , "Telegram Share" , MessageBoxButtons.OK , icon );
+
+            if ( _uiContext != null )
+            {
+                _uiContext.Post( state => show( ) , null );
+            }
+            else
+            {
+                show( );
+            }
         }
 
         /// <summary>Разворачивает окно при необходимости и выводит его на передний план.</summary>
         private static bool EnsureForeground( IntPtr hWnd )
         {
-            if ( hWnd == IntPtr.Zero )
-            {
-                return false;
-            }
-
-            try
-            {
-                if ( IsIconic( hWnd ) )
-                {
-                    ShowWindow( hWnd , SwRestore );
-                }
-            }
-            catch
-            {
-            }
-
-            for ( int i = 0 ; i < 8 ; i++ )
-            {
-                if ( GetForegroundWindow( ) == hWnd )
-                {
-                    return true;
-                }
-
-                SetForegroundWindow( hWnd );
-                BringWindowToTop( hWnd );
-                Thread.Sleep( 150 );
-            }
-
-            return GetForegroundWindow( ) == hWnd;
+            return UiWin.EnsureForeground( hWnd );
         }
 
         private static void PressEscape( )
@@ -652,7 +648,6 @@ namespace TelegramShareAddin
         private const byte VkEscape = 0x1B;
         private const byte VkF1 = 0x70;
         private const byte VkF10 = 0x79;
-        private const int SwRestore = 9;
         private const uint GaRoot = 2;
 
         [StructLayout( LayoutKind.Sequential )]
@@ -665,8 +660,6 @@ namespace TelegramShareAddin
         [DllImport( "user32.dll" )]
         private static extern IntPtr GetForegroundWindow( );
 
-        [DllImport( "user32.dll" )]
-        private static extern bool SetForegroundWindow( IntPtr hWnd );
 
         [DllImport( "user32.dll" )]
         private static extern uint GetWindowThreadProcessId( IntPtr hWnd , out uint processId );
@@ -683,14 +676,8 @@ namespace TelegramShareAddin
         [DllImport( "user32.dll" )]
         private static extern void keybd_event( byte vk , byte scan , uint flags , UIntPtr extraInfo );
 
-        [DllImport( "user32.dll" )]
-        private static extern bool ShowWindow( IntPtr hWnd , int nCmdShow );
 
-        [DllImport( "user32.dll" )]
-        private static extern bool IsIconic( IntPtr hWnd );
 
-        [DllImport( "user32.dll" )]
-        private static extern bool BringWindowToTop( IntPtr hWnd );
 
         [DllImport( "user32.dll" )]
         private static extern IntPtr WindowFromPoint( POINT point );

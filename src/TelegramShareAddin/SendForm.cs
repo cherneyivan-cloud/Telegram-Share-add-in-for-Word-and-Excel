@@ -32,10 +32,11 @@ namespace TelegramShareAddin
         private readonly HashSet<string> _chatNames = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
         private readonly HashSet<string> _hiddenChats = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
         private Dictionary<string, MessengerChatInfo> _chatInfoMap = new Dictionary<string, MessengerChatInfo>( StringComparer.OrdinalIgnoreCase );
-        private List<MessengerChatInfo> _chatInfos = new List<MessengerChatInfo>( );
         private int _loadGeneration;
         private bool _firstShown;
         private bool _forceRefresh;
+        private CancellationTokenSource _loadCts;
+        private readonly System.Windows.Forms.Timer _filterTimer = new System.Windows.Forms.Timer( );
 
         private ComboBox _messengerBox;
         private TextBox _searchBox;
@@ -162,6 +163,14 @@ namespace TelegramShareAddin
             }
 
             InitializeControls( defaultMessenger );
+
+            // Фильтрация 900+ чатов на каждый символ подтормаживает ввод — ждём паузу.
+            _filterTimer.Interval = 150;
+            _filterTimer.Tick += ( sender , args ) =>
+            {
+                _filterTimer.Stop( );
+                ApplyFilter( null );
+            };
 
             RebuildAll( );
         }
@@ -435,7 +444,6 @@ namespace TelegramShareAddin
 
         private void OnMessengerChanged( object sender , EventArgs e )
         {
-            _chatInfos.Clear( );
             _chatNames.Clear( );
             UpdateMessengerTexts( );
             RebuildAll( );
@@ -469,18 +477,44 @@ namespace TelegramShareAddin
         {
             int generation = Interlocked.Increment( ref _loadGeneration );
             Messenger messenger = Messenger;
+            CancellationToken token = ResetChatLoad( );
 
             _statusLabel.Text = messenger == Messenger.Max
                 ? "Загрузка из MAX..."
                 : "Загрузка из Telegram...";
 
-            var thread = new Thread( new ThreadStart( delegate { LoadChatsWorker( messenger , generation ); } ) );
+            var thread = new Thread( ( ) => LoadChatsWorker( messenger , generation , token ) );
             thread.IsBackground = true;
             thread.SetApartmentState( ApartmentState.STA );
             thread.Start( );
         }
 
-        private void LoadChatsWorker( Messenger messenger , int generation )
+        /// <summary>Отменяет предыдущий скан и выдаёт токен для нового.</summary>
+        private CancellationToken ResetChatLoad( )
+        {
+            CancelChatLoad( );
+            _loadCts = new CancellationTokenSource( );
+            return _loadCts.Token;
+        }
+
+        private void CancelChatLoad( )
+        {
+            try
+            {
+                if ( _loadCts != null )
+                {
+                    _loadCts.Cancel( );
+                    _loadCts.Dispose( );
+                }
+            }
+            catch
+            {
+            }
+
+            _loadCts = null;
+        }
+
+        private void LoadChatsWorker( Messenger messenger , int generation , CancellationToken token )
         {
             var chats = new List<MessengerChatInfo>( );
             bool running = false;
@@ -488,6 +522,11 @@ namespace TelegramShareAddin
 
             try
             {
+                if ( token.IsCancellationRequested )
+                {
+                    return;
+                }
+
                 int pid = messenger == Messenger.Max
                     ? MaxSender.GetProcessId( )
                     : TelegramSender.GetTelegramProcessId( );
@@ -498,8 +537,8 @@ namespace TelegramShareAddin
                     bool refresh = _forceRefresh;
                     _forceRefresh = false;
                     chats = messenger == Messenger.Max
-                        ? MaxUi.GetChats( pid , refresh )
-                        : TelegramUi.GetChats( pid );
+                        ? MaxUi.GetChats( pid , refresh , token )
+                        : TelegramUi.GetChats( pid , token );
                 }
             }
             catch ( Exception ex )
@@ -508,11 +547,16 @@ namespace TelegramShareAddin
                 AddinLog.Error( "Загрузка чатов" , ex );
             }
 
+            if ( token.IsCancellationRequested )
+            {
+                return;
+            }
+
             try
             {
                 if ( !IsDisposed && IsHandleCreated )
                 {
-                    BeginInvoke( (Action)delegate { ApplyChats( chats , running , error , messenger , generation ); } );
+                    BeginInvoke( (Action) ( ( ) => ApplyChats( chats , running , error , messenger , generation ) ) );
                 }
             }
             catch
@@ -527,7 +571,6 @@ namespace TelegramShareAddin
                 return;
             }
 
-            _chatInfos = chats;
             _chatNames.Clear( );
 
             var map = new Dictionary<string, MessengerChatInfo>( StringComparer.OrdinalIgnoreCase );
@@ -679,7 +722,8 @@ namespace TelegramShareAddin
 
         private void OnSearchChanged( object sender , EventArgs e )
         {
-            ApplyFilter( null );
+            _filterTimer.Stop( );
+            _filterTimer.Start( );
         }
 
         private void OnDrawItem( object sender , DrawItemEventArgs e )
@@ -733,7 +777,10 @@ namespace TelegramShareAddin
             {
                 _settings.RecentContacts.Insert( 0 , c );
             }
-            _settings.Save( );
+            if ( !_settings.Save( ) )
+            {
+                AddinLog.Warn( "Не удалось сохранить настройки" );
+            }
 
             RebuildAll( );
             _contactBox.Text = c;
@@ -749,14 +796,20 @@ namespace TelegramShareAddin
 
             if ( _settings.RecentContacts.Remove( item.Name ) )
             {
-                _settings.Save( );
+                if ( !_settings.Save( ) )
+                {
+                    AddinLog.Warn( "Не удалось сохранить настройки" );
+                }
                 RebuildAll( );
                 return;
             }
 
             _settings.HideChat( item.Name );
             _hiddenChats.Add( item.Name );
-            _settings.Save( );
+            if ( !_settings.Save( ) )
+            {
+                AddinLog.Warn( "Не удалось сохранить настройки" );
+            }
             RebuildAll( );
         }
 

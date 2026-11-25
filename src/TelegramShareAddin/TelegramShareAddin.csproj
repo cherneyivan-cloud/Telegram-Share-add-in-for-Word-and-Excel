@@ -76,6 +76,7 @@
     <Compile Include="Icons.cs" />
     <Compile Include="AddinLog.cs" />
     <Compile Include="UiWin.cs" />
+    <Compile Include="Timeouts.cs" />
     <Compile Include="MaxSender.cs" />
     <Compile Include="QatPinner.cs" />
     <Compile Include="RibbonDefinition.cs" />

@@ -148,6 +148,20 @@ namespace TelegramShareAddin
             return null;
         }
 
+        /// <summary>Собирает контекст хоста для диалога и отправки.</summary>
+        public static SendRequest CreateRequest( Func<bool> hasDocument , Func<SendFileFormat , string> saveDocument ,
+                                                 string noDocumentMessage , string nativeLabel , bool allowPdf )
+        {
+            return new SendRequest
+            {
+                HasDocument = hasDocument ,
+                SaveDocument = saveDocument ,
+                NoDocumentMessage = noDocumentMessage ,
+                NativeLabel = nativeLabel ,
+                AllowPdf = allowPdf
+            };
+        }
+
         /// <summary>Кнопки с документом доступны, без документа — нет.</summary>
         public static bool IsEnabled( SendRequest request )
         {
@@ -198,7 +212,10 @@ namespace TelegramShareAddin
                         settings.RememberContactName( form.Contact );
                     }
                     settings.LastFormat = format == SendFileFormat.Native ? "DOCX" : "PDF";
-                    settings.Save( );
+                    if ( !settings.Save( ) )
+                    {
+                        AddinLog.Warn( "Настройки не сохранены" );
+                    }
                 }
 
                 // Сохранение документа — COM-вызовы хоста, поэтому только на UI-потоке.

@@ -5,8 +5,12 @@ using Word = Microsoft.Office.Interop.Word;
 namespace TelegramShareAddin
 {
     /// <summary>
-    /// Сохранение документа Word во временный файл (PDF или DOCX).
+    /// Сохранение документа Word во временный файл (PDF или копия в родном формате).
     /// Возвращает фактический путь к подготовленному файлу.
+    ///
+    /// Документ хоста не пересохраняется: используется только SaveCopyAs/экспорт.
+    /// SaveAs2 здесь неприменим — он меняет путь живого документа и сохраняет
+    /// несохранённые правки пользователя на диск.
     /// </summary>
     internal static class WordDocumentSaver
     {
@@ -32,7 +36,6 @@ namespace TelegramShareAddin
 
         private static string SaveDocxCopy( Word.Document doc , string path )
         {
-            // 1) Прямое копирование (для документов формата .docx/.docm).
             try
             {
                 object fileName = path;
@@ -44,78 +47,11 @@ namespace TelegramShareAddin
             }
             catch ( Exception ex )
             {
-                AddinCore.Log( "SaveCopyAs ERROR: " + ex.Message );
+                AddinLog.Warn( "Word SaveCopyAs: " + AddinLog.Describe( ex ) );
             }
 
-            string original = null;
-            try
-            {
-                original = doc.FullName;
-            }
-            catch
-            {
-            }
-
-            bool hadPath = !string.IsNullOrEmpty( original ) && original.Length > 2 && original[1] == ':';
-
-            // 2) Конвертация в .docx через SaveAs2 с восстановлением исходного имени.
-            if ( hadPath )
-            {
-                try
-                {
-                    object outPath = path;
-                    object outFormat = Microsoft.Office.Interop.Word.WdSaveFormat.wdFormatXMLDocument;
-                    doc.SaveAs2( ref outPath , ref outFormat );
-
-                    bool ok = IsUsable( path );
-
-                    try
-                    {
-                        object restore = original;
-                        doc.SaveAs2( ref restore );
-                    }
-                    catch ( Exception ex )
-                    {
-                        AddinCore.Log( "Восстановление имени документа: " + ex.Message );
-                    }
-
-                    if ( ok )
-                    {
-                        return path;
-                    }
-                }
-                catch ( Exception ex )
-                {
-                    AddinCore.Log( "SaveAs2 (docx) ERROR: " + ex.Message );
-                }
-            }
-
-            // 3) Копия сохранённого файла с его настоящим расширением.
-            if ( hadPath )
-            {
-                try
-                {
-                    string ext = Path.GetExtension( original );
-                    if ( string.IsNullOrEmpty( ext ) )
-                    {
-                        ext = ".docx";
-                    }
-
-                    string alt = Path.ChangeExtension( path , ext );
-                    File.Copy( original , alt , true );
-                    if ( IsUsable( alt ) )
-                    {
-                        AddinCore.Log( "Сохранена файловая копия: " + alt );
-                        return alt;
-                    }
-                }
-                catch ( Exception ex )
-                {
-                    AddinCore.Log( "File.Copy ERROR: " + ex.Message );
-                }
-            }
-
-            throw new InvalidOperationException( "Не удалось сохранить документ. Сохраните его на диск (Файл -> Сохранить) и повторите, либо выберите формат PDF." );
+            throw new InvalidOperationException(
+                "Не удалось сделать копию документа. Сохраните его (Ctrl+S) и повторите либо выберите формат PDF." );
         }
 
         private static bool IsUsable( string path )

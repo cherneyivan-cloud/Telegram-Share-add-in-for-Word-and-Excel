@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Drawing;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -18,6 +19,9 @@ namespace TelegramShareAddin
         private const int ScClose = 0xF060;
 
         private bool _finished;
+
+        /// <summary>Работа завершилась до показа окна — закрыться сразу после OnShown.</summary>
+        public bool FinishRequested { get; set; }
 
         public SendingForm( string text )
         {
@@ -57,7 +61,26 @@ namespace TelegramShareAddin
         public void MarkFinished( )
         {
             _finished = true;
-            Close( );
+
+            if ( Visible )
+            {
+                Close( );
+            }
+            else
+            {
+                FinishRequested = true;
+            }
+        }
+
+        protected override void OnShown( EventArgs e )
+        {
+            base.OnShown( e );
+
+            // Работа могла закончиться до первого показа окна.
+            if ( FinishRequested || _finished )
+            {
+                BeginInvoke( (Action) Close );
+            }
         }
 
         protected override void OnFormClosing( FormClosingEventArgs e )
@@ -86,6 +109,8 @@ namespace TelegramShareAddin
     /// <summary>Запуск операции с UI Automation в отдельном STA-потоке с окном прогресса.</summary>
     internal static class SendRunner
     {
+        private static int _busy;
+
         public static void Run( string caption , Action work )
         {
             if ( work == null )
@@ -93,44 +118,74 @@ namespace TelegramShareAddin
                 return;
             }
 
+            // Две отправки одновременно боролись бы за буфер обмена и активное окно.
+            if ( Interlocked.CompareExchange( ref _busy , 1 , 0 ) != 0 )
+            {
+                MessageBox.Show(
+                    "Отправка уже выполняется — дождитесь её завершения." ,
+                    "Telegram Share" ,
+                    MessageBoxButtons.OK ,
+                    MessageBoxIcon.Information );
+                return;
+            }
+
             Exception failure = null;
 
-            using ( var form = new SendingForm( caption ) )
+            try
             {
-                var thread = new Thread( ( ) =>
+                using ( var form = new SendingForm( caption ) )
                 {
-                    try
-                    {
-                        work( );
-                    }
-                    catch ( Exception ex )
-                    {
-                        failure = ex;
-                    }
-                    finally
+                    var thread = new Thread( ( ) =>
                     {
                         try
                         {
-                            form.BeginInvoke( (Action) form.MarkFinished );
+                            work( );
                         }
-                        catch
+                        catch ( Exception ex )
                         {
+                            failure = ex;
                         }
+                        finally
+                        {
+                            try
+                            {
+                                if ( form.IsHandleCreated && !form.IsDisposed )
+                                {
+                                    form.BeginInvoke( (Action) form.MarkFinished );
+                                }
+                                else
+                                {
+                                    form.FinishRequested = true;
+                                }
+                            }
+                            catch
+                            {
+                            }
+                        }
+                    } );
+
+                    thread.IsBackground = true;
+                    thread.SetApartmentState( ApartmentState.STA );
+
+                    // Поток стартует только после создания окна: иначе BeginInvoke из
+                    // рабочего потока бросит исключение, и окно останется висеть.
+                    form.Shown += ( sender , args ) => thread.Start( );
+                    form.ShowDialog( );
+
+                    if ( !thread.Join( 2000 ) )
+                    {
+                        AddinLog.Warn( "SendRunner: рабочий поток не завершился за 2 с" );
                     }
-                } );
+                }
 
-                thread.IsBackground = true;
-                thread.SetApartmentState( ApartmentState.STA );
-                thread.Start( );
-
-                form.ShowDialog( );
-
-                thread.Join( 10000 );
+                if ( failure != null )
+                {
+                    ExceptionDispatchInfo.Capture( failure ).Throw( );
+                }
             }
-
-            if ( failure != null )
+            finally
             {
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture( failure ).Throw( );
+                Interlocked.Exchange( ref _busy , 0 );
             }
         }
     }
