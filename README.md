@@ -108,7 +108,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1 -RemoveFiles
 ## Использование
 
 1. Откройте документ в Word.
-2. На ленте появится вкладка **Telegram Share** → кнопка **Отправить в Telegram**.
+2. На ленте появится вкладка **«Отправить»** → кнопка **«Отправить в Telegram»**.
 3. Укажите контакт:
    - `@username` или `username` (например, `@durov`),
    - номер телефона с `+` (например, `+79123456789`),
@@ -198,7 +198,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1 -RemoveFiles
 - Класс `Addin` реализует `IDTExtensibility2` (жизненный цикл COM-надстройки) и `IRibbonExtensibility` (лента). Интерфейс `IDTExtensibility2` берётся из `Extensibility.dll`, а не объявляется вручную — у настоящего метода DispId 1–5, иначе Word создаёт объект, но не вызывает `OnConnection`.
 - Лента задаётся декларативно (XML customUI); callback кнопки: `TelegramShareAddin.Addin.OnSendButton` (вызов через IDispatch).
 - Отправка идёт без Bot API: глубокие ссылки `tg://resolve?domain=...`, `tg://resolve?phone=...`, `tg://user?id=...` + буфер обмена (`Clipboard.SetFileDropList`) + `SendKeys` (`^v`, подпись, `{ENTER}`).
-- Настройки — Newtonsoft.Json, `%APPDATA%\TelegramShareAddin\config.json`. Сборка Newtonsoft.Json.dll грузится из папки надстройки через `AssemblyResolve`, поэтому не зависит от версий, уже загруженных хостом.
+- Настройки — Newtonsoft.Json, `%APPDATA%\TelegramShareAddin\config.json`. `Newtonsoft.Json.dll` лежит в папке надстройки и загружается как обычная зависимость через `CodeBase` из реестра, поэтому не зависит от версий, уже загруженных хостом.
 
 - Сборка: .NET Framework 4.8, `x64` (обязательно для 64-битного Word), без strong-name, COM-регистрация пользовательская (в `HKCU`).
 
