@@ -1,12 +1,16 @@
 ﻿using System;
 using System.IO;
+using System.Threading;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace TelegramShareAddin
 {
     /// <summary>
-    /// Сохранение документа Word во временный файл (PDF или DOCX).
-    /// Возвращает фактический путь к подготовленному файлу.
+    /// Сохранение документа Word во временный файл.
+    ///
+    /// Документ хоста не пересохраняется: используются SaveCopyAs, копирование файла
+    /// или экспорт в PDF. SaveAs2 здесь неприменим — он меняет путь живого документа
+    /// и сохраняет несохранённые правки пользователя на диск.
     /// </summary>
     internal static class WordDocumentSaver
     {
@@ -14,108 +18,95 @@ namespace TelegramShareAddin
         {
             if ( format == SendFileFormat.Pdf )
             {
-                try
-                {
-                    doc.ExportAsFixedFormat( path , Microsoft.Office.Interop.Word.WdExportFormat.wdExportFormatPDF );
-                }
-                catch ( Exception ex )
-                {
-                    throw new InvalidOperationException( "Не удалось экспортировать документ в PDF: " + ex.Message , ex );
-                }
-
-                EnsureFile( path );
-                return path;
+                return SavePdf( doc , path );
             }
 
-            return SaveDocxCopy( doc , path );
+            return SaveNativeCopy( doc , path );
         }
 
-        private static string SaveDocxCopy( Word.Document doc , string path )
+        private static string SavePdf( Word.Document doc , string path )
         {
-            // 1) Прямое копирование (для документов формата .docx/.docm).
             try
             {
-                object fileName = path;
-                doc.SaveCopyAs( ref fileName );
-                if ( IsUsable( path ) )
-                {
-                    return path;
-                }
+                doc.ExportAsFixedFormat( path , Microsoft.Office.Interop.Word.WdExportFormat.wdExportFormatPDF );
             }
             catch ( Exception ex )
             {
-                AddinCore.Log( "SaveCopyAs ERROR: " + ex.Message );
+                throw new InvalidOperationException( "Не удалось экспортировать документ в PDF: " + ex.Message , ex );
             }
 
-            string original = null;
-            try
-            {
-                original = doc.FullName;
-            }
-            catch
-            {
-            }
+            EnsureFile( path );
+            return path;
+        }
 
-            bool hadPath = !string.IsNullOrEmpty( original ) && original.Length > 2 && original[1] == ':';
-
-            // 2) Конвертация в .docx через SaveAs2 с восстановлением исходного имени.
-            if ( hadPath )
+        private static string SaveNativeCopy( Word.Document doc , string path )
+        {
+            // 1. Штатный путь: копия без изменения документа. Повторяем: файл может
+            //    быть кратковременно занят антивирусом или индексатором.
+            for ( int attempt = 0 ; attempt < 3 ; attempt++ )
             {
                 try
                 {
-                    object outPath = path;
-                    object outFormat = Microsoft.Office.Interop.Word.WdSaveFormat.wdFormatXMLDocument;
-                    doc.SaveAs2( ref outPath , ref outFormat );
+                    object fileName = path;
+                    doc.SaveCopyAs( ref fileName );
 
-                    bool ok = IsUsable( path );
-
-                    try
-                    {
-                        object restore = original;
-                        doc.SaveAs2( ref restore );
-                    }
-                    catch ( Exception ex )
-                    {
-                        AddinCore.Log( "Восстановление имени документа: " + ex.Message );
-                    }
-
-                    if ( ok )
+                    if ( IsUsable( path ) )
                     {
                         return path;
                     }
                 }
                 catch ( Exception ex )
                 {
-                    AddinCore.Log( "SaveAs2 (docx) ERROR: " + ex.Message );
+                    AddinLog.Warn( "Word SaveCopyAs (попытка " + ( attempt + 1 ) + "): " + AddinLog.Describe( ex ) );
                 }
+
+                Thread.Sleep( 300 );
             }
 
-            // 3) Копия сохранённого файла с его настоящим расширением.
-            if ( hadPath )
+            // 2. Документ сохранён и не имеет несохранённых правок — файл можно
+            //    скопировать как есть, содержимое будет точным.
+            try
             {
-                try
-                {
-                    string ext = Path.GetExtension( original );
-                    if ( string.IsNullOrEmpty( ext ) )
-                    {
-                        ext = ".docx";
-                    }
+                string original = doc.FullName;
+                bool saved = doc.Saved;
 
-                    string alt = Path.ChangeExtension( path , ext );
-                    File.Copy( original , alt , true );
-                    if ( IsUsable( alt ) )
-                    {
-                        AddinCore.Log( "Сохранена файловая копия: " + alt );
-                        return alt;
-                    }
-                }
-                catch ( Exception ex )
+                if ( saved && !string.IsNullOrEmpty( original ) && File.Exists( original ) )
                 {
-                    AddinCore.Log( "File.Copy ERROR: " + ex.Message );
+                    File.Copy( original , path , true );
+
+                    if ( IsUsable( path ) )
+                    {
+                        AddinLog.Info( "Word: отправлена файловая копия документа" );
+                        return path;
+                    }
                 }
             }
+            catch ( Exception ex )
+            {
+                AddinLog.Warn( "Word File.Copy: " + AddinLog.Describe( ex ) );
+            }
 
-            throw new InvalidOperationException( "Не удалось сохранить документ. Сохраните его на диск (Файл -> Сохранить) и повторите, либо выберите формат PDF." );
+            // 3. Резервный путь: PDF всегда отражает текущее состояние и не трогает
+            //    оригинал. Формат меняется, поэтому сообщаем об этом в лог.
+            string pdfPath = Path.ChangeExtension( path , ".pdf" );
+
+            try
+            {
+                doc.ExportAsFixedFormat( pdfPath , Microsoft.Office.Interop.Word.WdExportFormat.wdExportFormatPDF );
+
+                if ( IsUsable( pdfPath ) )
+                {
+                    AddinLog.Warn( "Word: DOCX-копия недоступна, документ отправлен в PDF (" + pdfPath + ")" );
+                    return pdfPath;
+                }
+            }
+            catch ( Exception ex )
+            {
+                AddinLog.Error( "Word PDF fallback" , ex );
+            }
+
+            throw new InvalidOperationException(
+                "Не удалось подготовить копию документа. Сохраните его (Ctrl+S) и повторите либо выберите формат PDF." );
         }
 
         private static bool IsUsable( string path )

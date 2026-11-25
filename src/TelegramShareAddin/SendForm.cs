@@ -31,6 +31,12 @@ namespace TelegramShareAddin
         private readonly List<ContactItem> _all = new List<ContactItem>( );
         private readonly HashSet<string> _chatNames = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
         private readonly HashSet<string> _hiddenChats = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
+        private Dictionary<string, MessengerChatInfo> _chatInfoMap = new Dictionary<string, MessengerChatInfo>( StringComparer.OrdinalIgnoreCase );
+        private int _loadGeneration;
+        private bool _firstShown;
+        private bool _forceRefresh;
+        private CancellationTokenSource _loadCts;
+        private readonly System.Windows.Forms.Timer _filterTimer = new System.Windows.Forms.Timer( );
 
         private ComboBox _messengerBox;
         private TextBox _searchBox;
@@ -67,9 +73,9 @@ namespace TelegramShareAddin
             {
                 if ( !_allowPdf )
                 {
-                    return SendFileFormat.Docx;
+                    return SendFileFormat.Native;
                 }
-                return _formatBox.SelectedIndex == 1 ? SendFileFormat.Docx : SendFileFormat.Pdf;
+                return _formatBox.SelectedIndex == 1 ? SendFileFormat.Native : SendFileFormat.Pdf;
             }
         }
 
@@ -148,10 +154,49 @@ namespace TelegramShareAddin
 
             _italicFont = new Font( Font.FontFamily , Font.Size , FontStyle.Italic );
 
+            foreach ( string hidden in _settings.HiddenChats )
+            {
+                if ( !string.IsNullOrEmpty( hidden ) )
+                {
+                    _hiddenChats.Add( hidden );
+                }
+            }
+
             InitializeControls( defaultMessenger );
 
+            // Фильтрация 900+ чатов на каждый символ подтормаживает ввод — ждём паузу.
+            _filterTimer.Interval = 150;
+            _filterTimer.Tick += ( sender , args ) =>
+            {
+                _filterTimer.Stop( );
+                ApplyFilter( null );
+            };
+
             RebuildAll( );
-            StartChatLoad( );
+        }
+
+        protected override void OnShown( EventArgs e )
+        {
+            base.OnShown( e );
+
+            // Загрузку чатов запускаем только после создания handle формы: иначе
+            // BeginInvoke из рабочего потока бросит исключение, и список останется пустым.
+            if ( !_firstShown )
+            {
+                _firstShown = true;
+                StartChatLoad( );
+            }
+        }
+
+        protected override void Dispose( bool disposing )
+        {
+            if ( disposing && _italicFont != null )
+            {
+                _italicFont.Dispose( );
+                _italicFont = null;
+            }
+
+            base.Dispose( disposing );
         }
 
         private void InitializeControls( Messenger defaultMessenger )
@@ -399,7 +444,6 @@ namespace TelegramShareAddin
 
         private void OnMessengerChanged( object sender , EventArgs e )
         {
-            _chatInfos.Clear( );
             _chatNames.Clear( );
             UpdateMessengerTexts( );
             RebuildAll( );
@@ -431,24 +475,58 @@ namespace TelegramShareAddin
 
         private void StartChatLoad( )
         {
+            int generation = Interlocked.Increment( ref _loadGeneration );
             Messenger messenger = Messenger;
+            CancellationToken token = ResetChatLoad( );
 
             _statusLabel.Text = messenger == Messenger.Max
                 ? "Загрузка из MAX..."
                 : "Загрузка из Telegram...";
 
-            var thread = new Thread( new ThreadStart( delegate { LoadChatsWorker( messenger ); } ) );
+            var thread = new Thread( ( ) => LoadChatsWorker( messenger , generation , token ) );
             thread.IsBackground = true;
             thread.SetApartmentState( ApartmentState.STA );
             thread.Start( );
         }
 
-        private void LoadChatsWorker( Messenger messenger )
+        /// <summary>Отменяет предыдущий скан и выдаёт токен для нового.</summary>
+        private CancellationToken ResetChatLoad( )
+        {
+            CancelChatLoad( );
+            _loadCts = new CancellationTokenSource( );
+            return _loadCts.Token;
+        }
+
+        private void CancelChatLoad( )
+        {
+            try
+            {
+                if ( _loadCts != null )
+                {
+                    _loadCts.Cancel( );
+                    _loadCts.Dispose( );
+                }
+            }
+            catch
+            {
+            }
+
+            _loadCts = null;
+        }
+
+        private void LoadChatsWorker( Messenger messenger , int generation , CancellationToken token )
         {
             var chats = new List<MessengerChatInfo>( );
             bool running = false;
+            string error = null;
+
             try
             {
+                if ( token.IsCancellationRequested )
+                {
+                    return;
+                }
+
                 int pid = messenger == Messenger.Max
                     ? MaxSender.GetProcessId( )
                     : TelegramSender.GetTelegramProcessId( );
@@ -456,20 +534,29 @@ namespace TelegramShareAddin
                 if ( pid != 0 )
                 {
                     running = true;
+                    bool refresh = _forceRefresh;
+                    _forceRefresh = false;
                     chats = messenger == Messenger.Max
-                        ? MaxUi.GetChats( pid )
-                        : TelegramUi.GetChats( pid );
+                        ? MaxUi.GetChats( pid , refresh , token )
+                        : TelegramUi.GetChats( pid , token );
                 }
             }
-            catch
+            catch ( Exception ex )
             {
+                error = AddinLog.Describe( ex );
+                AddinLog.Error( "Загрузка чатов" , ex );
+            }
+
+            if ( token.IsCancellationRequested )
+            {
+                return;
             }
 
             try
             {
-                if ( !IsDisposed )
+                if ( !IsDisposed && IsHandleCreated )
                 {
-                    BeginInvoke( (Action)delegate { ApplyChats( chats , running , messenger ); } );
+                    BeginInvoke( (Action) ( ( ) => ApplyChats( chats , running , error , messenger , generation ) ) );
                 }
             }
             catch
@@ -477,27 +564,33 @@ namespace TelegramShareAddin
             }
         }
 
-        private void ApplyChats( List<MessengerChatInfo> chats , bool running , Messenger messenger )
+        private void ApplyChats( List<MessengerChatInfo> chats , bool running , string error , Messenger messenger , int generation )
         {
-            if ( messenger != Messenger )
+            if ( messenger != Messenger || generation != _loadGeneration )
             {
                 return;
             }
 
-            _chatInfos = chats;
             _chatNames.Clear( );
 
+            var map = new Dictionary<string, MessengerChatInfo>( StringComparer.OrdinalIgnoreCase );
             foreach ( MessengerChatInfo c in chats )
             {
                 if ( !string.IsNullOrEmpty( c.Name ) )
                 {
                     _chatNames.Add( c.Name );
+                    map[ c.Name ] = c;
                 }
             }
+            _chatInfoMap = map;
 
             string name = messenger == Messenger.Max ? "MAX" : "Telegram";
 
-            if ( chats.Count > 0 )
+            if ( error != null )
+            {
+                _statusLabel.Text = "Не удалось загрузить чаты из " + name + ": " + error;
+            }
+            else if ( chats.Count > 0 )
             {
                 _statusLabel.Text = "Из " + name + ": " + chats.Count;
             }
@@ -551,7 +644,7 @@ namespace TelegramShareAddin
                 }
 
                 bool isGroup = false;
-                MessengerChatInfo info = _chatInfo( c );
+                MessengerChatInfo info = ChatInfo( c );
                 if ( info != null )
                 {
                     isGroup = info.IsGroup;
@@ -573,18 +666,10 @@ namespace TelegramShareAddin
             ApplyFilter( keep );
         }
 
-        private List<MessengerChatInfo> _chatInfos = new List<MessengerChatInfo>( );
-
-        private MessengerChatInfo _chatInfo( string name )
+        private MessengerChatInfo ChatInfo( string name )
         {
-            foreach ( MessengerChatInfo c in _chatInfos )
-            {
-                if ( string.Equals( c.Name , name , StringComparison.OrdinalIgnoreCase ) )
-                {
-                    return c;
-                }
-            }
-            return null;
+            MessengerChatInfo info;
+            return _chatInfoMap.TryGetValue( name , out info ) ? info : null;
         }
 
         private void ApplyFilter( string keep )
@@ -637,7 +722,8 @@ namespace TelegramShareAddin
 
         private void OnSearchChanged( object sender , EventArgs e )
         {
-            ApplyFilter( null );
+            _filterTimer.Stop( );
+            _filterTimer.Start( );
         }
 
         private void OnDrawItem( object sender , DrawItemEventArgs e )
@@ -691,6 +777,10 @@ namespace TelegramShareAddin
             {
                 _settings.RecentContacts.Insert( 0 , c );
             }
+            if ( !_settings.Save( ) )
+            {
+                AddinLog.Warn( "Не удалось сохранить настройки" );
+            }
 
             RebuildAll( );
             _contactBox.Text = c;
@@ -706,16 +796,26 @@ namespace TelegramShareAddin
 
             if ( _settings.RecentContacts.Remove( item.Name ) )
             {
+                if ( !_settings.Save( ) )
+                {
+                    AddinLog.Warn( "Не удалось сохранить настройки" );
+                }
                 RebuildAll( );
                 return;
             }
 
+            _settings.HideChat( item.Name );
             _hiddenChats.Add( item.Name );
+            if ( !_settings.Save( ) )
+            {
+                AddinLog.Warn( "Не удалось сохранить настройки" );
+            }
             RebuildAll( );
         }
 
         private void OnRefreshChats( object sender , EventArgs e )
         {
+            _forceRefresh = true;
             StartChatLoad( );
         }
 

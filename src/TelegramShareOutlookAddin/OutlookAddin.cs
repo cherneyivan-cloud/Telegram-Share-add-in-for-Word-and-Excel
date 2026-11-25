@@ -1,6 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Collections.Generic;
 using System.Windows.Forms;
 using Extensibility;
 using Microsoft.Office.Core;
@@ -74,19 +74,19 @@ namespace TelegramShareAddin
         public void OnSendButton( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendMessage( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , false , Messenger.Telegram );
+            AddinCore.SendMessage( _settings , AddinCore.CreateRequest( HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , false ) , Messenger.Telegram );
         }
 
         public void OnSendMax( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendMessage( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , false , Messenger.Max );
+            AddinCore.SendMessage( _settings , AddinCore.CreateRequest( HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , false ) , Messenger.Max );
         }
 
         public void OnSendViaTelegram( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendVia( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , false );
+            AddinCore.SendVia( _settings , AddinCore.CreateRequest( HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , false ) );
         }
 
         public void OnSendAttachments( IRibbonControl control )
@@ -133,7 +133,6 @@ namespace TelegramShareAddin
                     }
                     finally
                     {
-                        try { Marshal.ReleaseComObject( attachment ); } catch { }
                     }
                 }
 
@@ -156,13 +155,12 @@ namespace TelegramShareAddin
                         }
                         finally
                         {
-                            try { Marshal.ReleaseComObject( attachment ); } catch { }
                         }
                     }
 
                     TelegramSender.CleanupOldTempFiles( );
                     var sender = new TelegramSender( _settings );
-                    sender.SendWithPickerPreparedFiles( paths );
+                    sender.SendWithPickerPreparedFiles( paths , null );
                 }
 
                 MessageBox.Show( "Вложения переданы в Telegram. Выберите чат в окне «Переслать…» и нажмите «Отправить»." , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Information );
@@ -174,10 +172,7 @@ namespace TelegramShareAddin
             }
             finally
             {
-                if ( item != null )
-                {
-                    try { Marshal.ReleaseComObject( item ); } catch { }
-                }
+                // Элемент принадлежит хосту (Selection/CurrentItem): его RCW не освобождаем.
             }
         }
 
@@ -256,10 +251,7 @@ namespace TelegramShareAddin
             }
             finally
             {
-                if ( item != null )
-                {
-                    try { Marshal.ReleaseComObject( item ); } catch { }
-                }
+                // Элемент принадлежит хосту (Selection/CurrentItem): его RCW не освобождаем.
             }
         }
 
@@ -272,6 +264,7 @@ namespace TelegramShareAddin
                 _settings = Settings.Load( );
             }
         }
+
 
         private bool HasOpenDocument( )
         {
@@ -307,7 +300,7 @@ namespace TelegramShareAddin
             return false;
         }
 
-        private string SaveActiveDocument( SendFileFormat format )
+        private PreparedFile SaveActiveDocument( SendFileFormat format )
         {
             object item = GetActiveItem( );
             if ( item == null )
@@ -315,20 +308,9 @@ namespace TelegramShareAddin
                 throw new InvalidOperationException( NoDocumentMessage );
             }
 
-            try
-            {
-                return OutlookItemSaver.Save( item , format );
-            }
-            finally
-            {
-                try
-                {
-                    Marshal.ReleaseComObject( item );
-                }
-                catch
-                {
-                }
-            }
+            // Письмо не является файлом на диске: в буфер пойдёт путь к .msg.
+            string path = OutlookItemSaver.Save( item , format );
+            return new PreparedFile { TempPath = path , OriginalPath = null };
         }
 
         private object GetActiveItem( )

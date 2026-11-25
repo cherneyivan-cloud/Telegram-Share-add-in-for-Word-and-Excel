@@ -1,6 +1,6 @@
 ﻿using System;
-using System.IO;
 using System.Runtime.InteropServices;
+using System.IO;
 using Extensibility;
 using Microsoft.Office.Core;
 using Word = Microsoft.Office.Interop.Word;
@@ -73,19 +73,19 @@ namespace TelegramShareAddin
         public void OnSendButton( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendMessage( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true , Messenger.Telegram );
+            AddinCore.SendMessage( _settings , AddinCore.CreateRequest( HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true ) , Messenger.Telegram );
         }
 
         public void OnSendMax( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendMessage( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true , Messenger.Max );
+            AddinCore.SendMessage( _settings , AddinCore.CreateRequest( HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true ) , Messenger.Max );
         }
 
         public void OnSendViaTelegram( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendVia( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true );
+            AddinCore.SendVia( _settings , AddinCore.CreateRequest( HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true ) );
         }
 
         public void OnPinToQat( IRibbonControl control )
@@ -108,13 +108,14 @@ namespace TelegramShareAddin
             }
         }
 
+
         private bool HasOpenDocument( )
         {
             Word.Application app = _wordApp;
             return app != null && app.Documents.Count > 0;
         }
 
-        private string SaveActiveDocument( SendFileFormat format )
+        private PreparedFile SaveActiveDocument( SendFileFormat format )
         {
             Word.Application app = _wordApp;
             if ( app == null )
@@ -125,12 +126,19 @@ namespace TelegramShareAddin
             Word.Document doc = app.ActiveDocument;
 
             string originalName = null;
+            string originalPath = null;
             try
             {
                 originalName = doc.Name;
+                originalPath = doc.FullName;
             }
             catch
             {
+            }
+
+            if ( !string.IsNullOrEmpty( originalPath ) && !File.Exists( originalPath ) )
+            {
+                originalPath = null;
             }
 
             string baseName = Path.GetFileNameWithoutExtension( originalName );
@@ -156,20 +164,11 @@ namespace TelegramShareAddin
             string path = TelegramSender.NewTempFile( baseName + ext );
             TelegramSender.CleanupOldTempFiles( );
 
-            try
-            {
-                return WordDocumentSaver.Save( doc , path , format );
-            }
-            finally
-            {
-                try
-                {
-                    Marshal.ReleaseComObject( doc );
-                }
-                catch
-                {
-                }
-            }
+            // Документ принадлежит хосту: освобождать его RCW нельзя, иначе Word
+            // может получить ObjectDisposedException при следующем обращении.
+            string preparedPath = WordDocumentSaver.Save( doc , path , format );
+
+            return new PreparedFile { TempPath = preparedPath , OriginalPath = originalPath };
         }
     }
 }

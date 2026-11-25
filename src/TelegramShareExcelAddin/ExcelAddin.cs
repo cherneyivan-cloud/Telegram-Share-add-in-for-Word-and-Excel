@@ -1,6 +1,6 @@
 ﻿using System;
-using System.IO;
 using System.Runtime.InteropServices;
+using System.IO;
 using Extensibility;
 using Microsoft.Office.Core;
 using Excel = Microsoft.Office.Interop.Excel;
@@ -73,19 +73,19 @@ namespace TelegramShareAddin
         public void OnSendButton( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendMessage( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true , Messenger.Telegram );
+            AddinCore.SendMessage( _settings , AddinCore.CreateRequest( HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true ) , Messenger.Telegram );
         }
 
         public void OnSendMax( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendMessage( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true , Messenger.Max );
+            AddinCore.SendMessage( _settings , AddinCore.CreateRequest( HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true ) , Messenger.Max );
         }
 
         public void OnSendViaTelegram( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendVia( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true );
+            AddinCore.SendVia( _settings , AddinCore.CreateRequest( HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true ) );
         }
 
         public void OnPinToQat( IRibbonControl control )
@@ -108,13 +108,14 @@ namespace TelegramShareAddin
             }
         }
 
+
         private bool HasOpenDocument( )
         {
             Excel.Application app = _excelApp;
             return app != null && app.Workbooks.Count > 0;
         }
 
-        private string SaveActiveDocument( SendFileFormat format )
+        private PreparedFile SaveActiveDocument( SendFileFormat format )
         {
             Excel.Application app = _excelApp;
             if ( app == null )
@@ -125,12 +126,19 @@ namespace TelegramShareAddin
             Excel.Workbook workbook = app.ActiveWorkbook;
 
             string originalName = null;
+            string originalPath = null;
             try
             {
                 originalName = workbook.Name;
+                originalPath = workbook.FullName;
             }
             catch
             {
+            }
+
+            if ( !string.IsNullOrEmpty( originalPath ) && !File.Exists( originalPath ) )
+            {
+                originalPath = null;
             }
 
             string baseName = Path.GetFileNameWithoutExtension( originalName );
@@ -156,21 +164,9 @@ namespace TelegramShareAddin
             string path = TelegramSender.NewTempFile( baseName + ext );
             TelegramSender.CleanupOldTempFiles( );
 
-            try
-            {
-                ExcelDocumentSaver.Save( workbook , path , format );
-                return path;
-            }
-            finally
-            {
-                try
-                {
-                    Marshal.ReleaseComObject( workbook );
-                }
-                catch
-                {
-                }
-            }
+            // Книга принадлежит хосту: освобождать её RCW нельзя.
+            ExcelDocumentSaver.Save( workbook , path , format );
+            return new PreparedFile { TempPath = path , OriginalPath = originalPath };
         }
     }
 }

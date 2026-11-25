@@ -4,7 +4,7 @@ using Excel = Microsoft.Office.Interop.Excel;
 
 namespace TelegramShareAddin
 {
-    /// <summary>Сохранение книги Excel во временный файл (PDF или XLSX(.</summary>
+    /// <summary>Сохранение книги Excel во временный файл (PDF или копия в родном формате).</summary>
     internal static class ExcelDocumentSaver
     {
         public static void Save( Excel.Workbook workbook , string path , SendFileFormat format )
@@ -28,20 +28,12 @@ namespace TelegramShareAddin
                 }
                 catch ( Exception ex )
                 {
-                    AddinCore.Log( "Excel SaveCopyAs ERROR: " + ex.ToString( ) );
+                    AddinLog.Warn( "Excel SaveCopyAs: " + AddinLog.Describe( ex ) );
 
-                    try
-                    {
-                        string full = workbook.FullName;
-                        if ( !string.IsNullOrEmpty( full ) && File.Exists( full ) )
-                        {
-                            File.Copy( full , path , true );
-                        }
-                    }
-                    catch ( Exception ex2 )
-                    {
-                        AddinCore.Log( "Excel File.Copy ERROR: " + ex2.ToString( ) );
-                    }
+                    // Копирование файла с диска отправило бы последнюю сохранённую версию
+                    // без несохранённых изменений — молча подменять содержимое нельзя.
+                    throw new InvalidOperationException(
+                        "Не удалось сохранить копию книги. Сохраните её (Ctrl+S) и повторите либо выберите формат PDF." , ex );
                 }
             }
 

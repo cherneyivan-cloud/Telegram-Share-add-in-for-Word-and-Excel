@@ -1,6 +1,5 @@
 ﻿using System;
-using System.Drawing;
-using System.IO;
+using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Office.Core;
 using stdole;
@@ -8,23 +7,46 @@ using stdole;
 namespace TelegramShareAddin
 {
     /// <summary>
-    /// Общая (статическая) логика надстроек Word и Excel.
+    /// Контекст хоста Office, нужный контроллеру для отправки.
+    /// Заменяет семь позиционных параметров, которые раньше передавались в SendMessage.
+    /// </summary>
+    public sealed class SendRequest
+    {
+        /// <summary>Сообщение, если открытого документа нет.</summary>
+        public string NoDocumentMessage { get; set; }
+
+        /// <summary>Название «родного» формата приложения (DOCX/XLSX/MSG) для диалога.</summary>
+        public string NativeLabel { get; set; }
+
+        /// <summary>Можно ли предложить PDF.</summary>
+        public bool AllowPdf { get; set; }
+
+        /// <summary>Есть ли активный документ.</summary>
+        public Func<bool> HasDocument { get; set; }
+
+        /// <summary>Сохранить документ во временный файл (COM, только UI-поток).</summary>
+        public Func<SendFileFormat , PreparedFile> SaveDocument { get; set; }
+    }
+
+    /// <summary>
+    /// Общая (статическая) логика надстроек Word, Excel и Outlook.
     /// COM-интерфейсы и методы ленты реализуются в самих классах надстроек.
     /// </summary>
     internal static class AddinCore
     {
-        private static IPictureDisp _imageRectangular;
+        private static int _activeSend;
         private static IPictureDisp _imageRounded;
         private static IPictureDisp _imagePaperclip;
         private static IPictureDisp _imagePrinter;
         private static IPictureDisp _imageMax;
         private static IPictureDisp _imagePin;
+        private static IPictureDisp _imageTelegram;
+
 
         public static string GetCustomUi( string ribbonId , bool outlook )
         {
             try
             {
-                Log( "GetCustomUI: " + ribbonId );
                 if ( string.IsNullOrEmpty( ribbonId ) || ribbonId.StartsWith( "Microsoft." , StringComparison.OrdinalIgnoreCase ) )
                 {
                     return outlook ? RibbonDefinition.OutlookXml : RibbonDefinition.Xml;
@@ -33,7 +55,7 @@ namespace TelegramShareAddin
             }
             catch ( Exception ex )
             {
-                Log( "GetCustomUI ERROR: " + ex.ToString( ) );
+                AddinLog.Error( "GetCustomUI" , ex );
                 return null;
             }
         }
@@ -42,7 +64,9 @@ namespace TelegramShareAddin
         {
             try
             {
-                if ( control != null && control.Id == "TelegramShareSendViaButton" )
+                string id = control != null ? control.Id : null;
+
+                if ( id == RibbonIds.SendVia )
                 {
                     if ( _imageRounded == null )
                     {
@@ -51,16 +75,16 @@ namespace TelegramShareAddin
                     return _imageRounded;
                 }
 
-                if ( control != null && control.Id == "TelegramShareButton" )
+                if ( id == RibbonIds.SendMessage )
                 {
-                    if ( _imageRectangular == null )
+                    if ( _imageTelegram == null )
                     {
-                        _imageRectangular = PictureConverter.ToPictureDisp( IconFactory.CreateRectangular( ) );
+                        _imageTelegram = PictureConverter.ToPictureDisp( IconFactory.CreateRectangular( ) );
                     }
-                    return _imageRectangular;
+                    return _imageTelegram;
                 }
 
-                if ( control != null && control.Id == "TelegramShareAttachmentsButton" )
+                if ( id == RibbonIds.Attachments )
                 {
                     if ( _imagePaperclip == null )
                     {
@@ -69,7 +93,7 @@ namespace TelegramShareAddin
                     return _imagePaperclip;
                 }
 
-                if ( control != null && control.Id == "TelegramSharePrintButton" )
+                if ( id == RibbonIds.Print )
                 {
                     if ( _imagePrinter == null )
                     {
@@ -78,7 +102,7 @@ namespace TelegramShareAddin
                     return _imagePrinter;
                 }
 
-                if ( control != null && control.Id == "TelegramShareMaxButton" )
+                if ( id == RibbonIds.Max )
                 {
                     if ( _imageMax == null )
                     {
@@ -87,7 +111,7 @@ namespace TelegramShareAddin
                     return _imageMax;
                 }
 
-                if ( control != null && control.Id == "TelegramSharePinQatButton" )
+                if ( id == RibbonIds.PinQat )
                 {
                     if ( _imagePin == null )
                     {
@@ -98,99 +122,148 @@ namespace TelegramShareAddin
             }
             catch ( Exception ex )
             {
-                Log( "GetButtonImage ERROR: " + ex.ToString( ) );
+                AddinLog.Error( "GetButtonImage" , ex );
             }
             return null;
         }
 
-        public static void SendMessage( Settings settings , Func<bool> hasDocument , Func<SendFileFormat,string> saveDocument , string noDocumentMessage , string nativeLabel , bool allowPdf , Messenger defaultMessenger )
+        /// <summary>Собирает контекст хоста для диалога и отправки.</summary>
+        public static SendRequest CreateRequest( Func<bool> hasDocument , Func<SendFileFormat , PreparedFile> saveDocument ,
+                                                 string noDocumentMessage , string nativeLabel , bool allowPdf )
+        {
+            return new SendRequest
+            {
+                HasDocument = hasDocument ,
+                SaveDocument = saveDocument ,
+                NoDocumentMessage = noDocumentMessage ,
+                NativeLabel = nativeLabel ,
+                AllowPdf = allowPdf
+            };
+        }
+
+        /// <summary>Кнопки с документом доступны, без документа — нет.</summary>
+        public static bool IsEnabled( SendRequest request )
         {
             try
             {
-                Log( "OnSendButton: enter, messenger = " + defaultMessenger );
+                return request != null && request.HasDocument != null && request.HasDocument( );
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
-                if ( !hasDocument( ) )
+        public static void SendMessage( Settings settings , SendRequest request , Messenger messenger )
+        {
+            if ( !TryEnterSend( ) )
+            {
+                return;
+            }
+
+            try
+            {
+                AddinLog.Info( "OnSendButton: enter, messenger = " + messenger );
+
+                if ( !IsEnabled( request ) )
                 {
-                    MessageBox.Show( noDocumentMessage , "Отправить сообщение" , MessageBoxButtons.OK , MessageBoxIcon.Information );
+                    MessageBox.Show( request.NoDocumentMessage , "Отправить сообщение" , MessageBoxButtons.OK , MessageBoxIcon.Information );
                     return;
                 }
 
-                Messenger messenger;
+                Messenger chosen;
+                SendFileFormat format;
+                string contact;
+                string message;
+                bool openByChatName;
 
-                using ( var form = new SendForm( settings , nativeLabel , allowPdf , defaultMessenger ) )
+                using ( var form = new SendForm( settings , request.NativeLabel , request.AllowPdf , messenger ) )
                 {
                     if ( form.ShowDialog( ) != DialogResult.OK )
                     {
                         return;
                     }
 
-                    messenger = form.Messenger;
+                    chosen = form.Messenger;
+                    format = form.Format;
+                    contact = chosen == Messenger.Max ? form.ResolvedContact : form.Contact;
+                    message = form.Message;
+                    openByChatName = form.OpenByChatName;
 
                     settings.RememberContact = form.RememberContact;
                     if ( settings.RememberContact )
                     {
                         settings.RememberContactName( form.Contact );
                     }
-                    settings.LastFormat = form.Format == SendFileFormat.Docx ? "DOCX" : "PDF";
-                    settings.LastMessenger = messenger == Messenger.Max ? "MAX" : "Telegram";
-                    settings.Save( );
-
-                    Cursor.Current = Cursors.WaitCursor;
-                    try
+                    settings.LastFormat = format == SendFileFormat.Native ? "DOCX" : "PDF";
+                    if ( !settings.Save( ) )
                     {
-                        string tempFile = saveDocument( form.Format );
-                        string contact = messenger == Messenger.Max ? form.ResolvedContact : form.Contact;
-                        var options = new SendOptions
-                        {
-                            Contact = contact ,
-                            Message = form.Message ,
-                            Format = form.Format ,
-                            Messenger = messenger ,
-                            OpenByChatName = form.OpenByChatName
-                        };
-
-                        if ( messenger == Messenger.Max )
-                        {
-                            new MaxSender( settings ).SendPreparedFile( options , tempFile );
-                        }
-                        else
-                        {
-                            new TelegramSender( settings ).SendPreparedFile( options , tempFile );
-                        }
-                    }
-                    finally
-                    {
-                        Cursor.Current = Cursors.Default;
+                        AddinLog.Warn( "Настройки не сохранены" );
                     }
                 }
 
+                // Сохранение документа — COM-вызовы хоста, поэтому только на UI-потоке.
+                PreparedFile prepared = request.SaveDocument( format );
+                string tempFile = prepared.TempPath;
+
+                var options = new SendOptions
+                {
+                    Contact = contact ,
+                    Message = message ,
+                    OpenByChatName = openByChatName ,
+                    ClipboardPath = prepared.OriginalPath
+                };
+
+                string caption = chosen == Messenger.Max ? "Отправляю в MAX…" : "Отправляю в Telegram…";
+
+                SendRunner.Run( caption , ( ) =>
+                {
+                    if ( chosen == Messenger.Max )
+                    {
+                        new MaxSender( settings ).SendPreparedFile( options , tempFile );
+                    }
+                    else
+                    {
+                        new TelegramSender( settings ).SendPreparedFile( options , tempFile );
+                    }
+                } );
+
                 // Без модального подтверждения: результат виден в самом мессенджере.
-                Log( "Отправлено: " + messenger );
+                AddinLog.Info( "Отправлено: " + chosen );
             }
             catch ( Exception ex )
             {
-                Log( "OnSendButton ERROR: " + ex.ToString( ) );
+                AddinLog.Error( "OnSendButton" , ex );
                 MessageBox.Show( "Ошибка: " + ex.Message , "Отправить сообщение" , MessageBoxButtons.OK , MessageBoxIcon.Error );
+            }
+            finally
+            {
+                Interlocked.Exchange( ref _activeSend , 0 );
             }
         }
 
-        public static void SendVia( Settings settings , Func<bool> hasDocument , Func<SendFileFormat,string> saveDocument , string noDocumentMessage , string nativeLabel , bool allowPdf )
+        public static void SendVia( Settings settings , SendRequest request )
         {
+            if ( !TryEnterSend( ) )
+            {
+                return;
+            }
+
             try
             {
-                Log( "OnSendViaTelegram: enter" );
+                AddinLog.Info( "OnSendViaTelegram: enter" );
 
-                if ( !hasDocument( ) )
+                if ( !IsEnabled( request ) )
                 {
-                    MessageBox.Show( noDocumentMessage , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Information );
+                    MessageBox.Show( request.NoDocumentMessage , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Information );
                     return;
                 }
 
-                SendFileFormat format = settings.LastFormat == "DOCX" ? SendFileFormat.Docx : SendFileFormat.Pdf;
+                SendFileFormat format = settings.LastFormat == "DOCX" ? SendFileFormat.Native : SendFileFormat.Pdf;
 
-                if ( allowPdf )
+                if ( request.AllowPdf )
                 {
-                    using ( var formatForm = new FormatForm( format , nativeLabel ) )
+                    using ( var formatForm = new FormatForm( format , request.NativeLabel ) )
                     {
                         if ( formatForm.ShowDialog( ) != DialogResult.OK )
                         {
@@ -201,42 +274,56 @@ namespace TelegramShareAddin
                 }
                 else
                 {
-                    format = SendFileFormat.Docx;
+                    format = SendFileFormat.Native;
                 }
 
-                Cursor.Current = Cursors.WaitCursor;
-                try
-                {
-                    string tempFile = saveDocument( format );
-                    var sender = new TelegramSender( settings );
-                    sender.SendWithPickerPreparedFile( tempFile );
-                }
-                finally
-                {
-                    Cursor.Current = Cursors.Default;
-                }
+                PreparedFile prepared = request.SaveDocument( format );
 
-                // Без модального подтверждения: окно «Переслать…» открыто в Telegram.
-                Log( "Передано в Telegram (окно «Переслать…»)" );
+                SendRunner.Run( "Передаю в Telegram…" , ( ) =>
+                {
+                    new TelegramSender( settings ).SendWithPickerPreparedFiles(
+                        new[ ] { prepared.TempPath } , prepared.OriginalPath );
+                } );
+
+                AddinLog.Info( "Передано в Telegram (окно «Переслать…»)" );
+
+                MessageBox.Show(
+                    "Файл передан в Telegram. В окне «Переслать…» выберите чат и отправьте." ,
+                    "Telegram Share" ,
+                    MessageBoxButtons.OK ,
+                    MessageBoxIcon.Information );
             }
             catch ( Exception ex )
             {
-                Log( "OnSendViaTelegram ERROR: " + ex.ToString( ) );
+                AddinLog.Error( "OnSendViaTelegram" , ex );
                 MessageBox.Show( "Ошибка: " + ex.Message , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Error );
+            }
+            finally
+            {
+                Interlocked.Exchange( ref _activeSend , 0 );
             }
         }
 
-        public static void Log( string message )        {
-            try
+        /// <summary>Защита от повторного запуска: два окна отправки одновременно недопустимы.</summary>
+        private static bool TryEnterSend( )
+        {
+            if ( Interlocked.CompareExchange( ref _activeSend , 1 , 0 ) == 0 )
             {
-                string dir = Path.Combine( Environment.GetFolderPath( Environment.SpecialFolder.ApplicationData ) , "TelegramShareAddin" );
-                Directory.CreateDirectory( dir );
-                string line = DateTime.Now.ToString( "yyyy-MM-dd HH:mm:ss.fff" ) + "  " + message + Environment.NewLine;
-                File.AppendAllText( Path.Combine( dir , "addin.log" ) , line );
+                return true;
             }
-            catch
-            {
-            }
+
+            MessageBox.Show(
+                "Отправка уже выполняется — дождитесь её завершения." ,
+                "Telegram Share" ,
+                MessageBoxButtons.OK ,
+                MessageBoxIcon.Information );
+
+            return false;
+        }
+
+        public static void Log( string message )
+        {
+            AddinLog.Info( message );
         }
     }
 }
