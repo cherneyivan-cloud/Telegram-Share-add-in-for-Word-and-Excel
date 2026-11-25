@@ -87,14 +87,14 @@ namespace TelegramShareAddin
             _settings = settings ?? new Settings( );
         }
 
-        /// <summary>Путь во временной папке с заданным именем файла. Каждая отправка — своя папка.</summary>
+        /// <summary>
+        /// Путь во временной папке с исходным именем файла. Путь постоянный для документа:
+        /// так Telegram не добавляет одну и ту же копию в окно «Переслать…» повторно (как в 1.0.0).
+        /// </summary>
         public static string NewTempFile( string fileName )
         {
-            string root = Path.Combine( Path.GetTempPath( ) , "TelegramShare" );
-            string dir = Path.Combine( root , Guid.NewGuid( ).ToString( "N" ).Substring( 0 , 8 ) );
+            string dir = Path.Combine( Path.GetTempPath( ) , "TelegramShare" );
             Directory.CreateDirectory( dir );
-
-            // Имя сохраняем как у исходного документа: уникальность даёт папка, а не суффикс.
             return Path.Combine( dir , SanitizeFileName( fileName ) );
         }
 
@@ -112,7 +112,7 @@ namespace TelegramShareAddin
             return name;
         }
 
-        /// <summary>Удалить временные файлы прошлых отправок (старше суток) только из своей папки.</summary>
+        /// <summary>Удалить временные файлы прошлых отправок (старше суток).</summary>
         public static void CleanupOldTempFiles( )
         {
             string root = Path.Combine( Path.GetTempPath( ) , "TelegramShare" );
@@ -124,22 +124,6 @@ namespace TelegramShareAddin
                     return;
                 }
 
-                // Каждая отправка лежит в своей подпапке.
-                foreach ( string dir in Directory.GetDirectories( root ) )
-                {
-                    try
-                    {
-                        if ( Directory.GetLastWriteTime( dir ) < DateTime.Now.AddDays( -1 ) )
-                        {
-                            Directory.Delete( dir , true );
-                        }
-                    }
-                    catch
-                    {
-                    }
-                }
-
-                // Файлы прежнего формата (без подпапок).
                 foreach ( string file in Directory.GetFiles( root ) )
                 {
                     try
@@ -147,6 +131,21 @@ namespace TelegramShareAddin
                         if ( File.GetLastWriteTime( file ) < DateTime.Now.AddDays( -1 ) )
                         {
                             File.Delete( file );
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                // Подпапки от версий 1.6.5–1.6.14.
+                foreach ( string dir in Directory.GetDirectories( root ) )
+                {
+                    try
+                    {
+                        if ( Directory.GetLastWriteTime( dir ) < DateTime.Now.AddDays( -1 ) )
+                        {
+                            Directory.Delete( dir , true );
                         }
                     }
                     catch
@@ -191,20 +190,7 @@ namespace TelegramShareAddin
             SendWithPickerPreparedFiles( new string[ ] { tempFile } , null );
         }
 
-        private static readonly object PickerGate = new object( );
-        private static int _pickerActive;
-        private static System.Threading.Timer _pickerWatchdog;
-
-        /// <summary>Открыто ли окно «Переслать…», запущенное надстройкой.</summary>
-        public static bool IsPickerBusy
-        {
-            get
-            {
-                return Volatile.Read( ref _pickerActive ) != 0;
-            }
-        }
-
-        /// <summary>Открыть в Telegram окно «Переслать…» сразу для нескольких файлов.</summary>
+        /// <summary>Открыть в Telegram окно «Переслать…» для подготовленного файла.</summary>
         public void SendWithPickerPreparedFiles( IEnumerable<string> files , string clipboardPath )
         {
             var list = new List<string>( files );
@@ -213,52 +199,7 @@ namespace TelegramShareAddin
                 throw new InvalidOperationException( "Нет файлов для отправки." );
             }
 
-            // Пока окно «Переслать…» открыто, второй запуск запрещён: Telegram добавил бы
-            // файл к уже открытым вложениям, и ушло бы несколько одинаковых сообщений.
-            if ( Interlocked.CompareExchange( ref _pickerActive , 1 , 0 ) != 0 )
-            {
-                AddinLog.Warn( "Send: окно «Переслать…» ещё открыто — повторный запуск пропущен" );
-                throw new InvalidOperationException(
-                    "Окно «Переслать…» уже открыто в Telegram. Отправьте файл в нём или закройте его, затем повторите." );
-            }
-
-            try
-            {
-                lock ( PickerGate )
-                {
-                    int pid = GetTelegramProcessId( );
-
-                    if ( pid != 0 )
-                    {
-                        // Любое открытое окно «Переслать…» закрываем клавишей Escape:
-                        // это не зависит от UI Automation и срабатывает сразу.
-                        IntPtr hwnd = FindTelegramWindow( );
-
-                        if ( hwnd != IntPtr.Zero && UiWin.EnsureForeground( hwnd ) )
-                        {
-                            try
-                            {
-                                UiWin.SendKeysTo( pid , "{ESC}" , "Telegram" );
-                                Thread.Sleep( 300 );
-                                AddinLog.Info( "Send: окно «Переслать…» закрыто перед новой отправкой" );
-                            }
-                            catch ( Exception ex )
-                            {
-                                AddinLog.Warn( "Send: Escape не отправлен — " + AddinLog.Describe( ex ) );
-                            }
-                        }
-                    }
-
-                    LaunchTelegramSendPath( list );
-                }
-            }
-            catch
-            {
-                Interlocked.Exchange( ref _pickerActive , 0 );
-                throw;
-            }
-
-            StartPickerWatchdog( );
+            LaunchTelegramSendPath( list );
 
             // После передачи в буфере — путь исходного файла (если он есть).
             try
@@ -270,51 +211,6 @@ namespace TelegramShareAddin
             catch
             {
             }
-        }
-
-        /// <summary>
-        /// Снимает запрет, когда окно «Переслать…» действительно закрылось.
-        /// Первые 5 секунд флаг держится всегда — окно может ещё не успеть отрисоваться.
-        /// </summary>
-        private static void StartPickerWatchdog( )
-        {
-            System.Threading.Timer previous = _pickerWatchdog;
-            _pickerWatchdog = null;
-
-            if ( previous != null )
-            {
-                try { previous.Dispose( ); } catch { }
-            }
-
-            int ticks = 0;
-
-            _pickerWatchdog = new System.Threading.Timer( state =>
-            {
-                ticks++;
-
-                bool open = false;
-                try
-                {
-                    open = TelegramUi.IsPickerOpen( GetTelegramProcessId( ) );
-                }
-                catch
-                {
-                }
-
-                bool minHoldPassed = ticks > 5;
-                bool timedOut = ticks > 600;
-
-                if ( timedOut || ( minHoldPassed && !open ) )
-                {
-                    Interlocked.Exchange( ref _pickerActive , 0 );
-
-                    System.Threading.Timer timer = _pickerWatchdog;
-                    if ( timer != null )
-                    {
-                        try { timer.Dispose( ); } catch { }
-                    }
-                }
-            } , null , 1000 , 1000 );
         }
 
         private void OpenChatAndSend( SendOptions options )
