@@ -78,6 +78,40 @@ namespace TelegramShareAddin
                 Thread.Sleep( delayMs );
             }
 
+            if ( GetForegroundWindow( ) == hwnd )
+            {
+                return true;
+            }
+
+            // Windows запрещает фоновому процессу перехватывать фокус. Присоединяемся
+            // к потоку активного окна — это разрешённый способ вывести своё окно вперёд.
+            try
+            {
+                IntPtr foreground = GetForegroundWindow( );
+                uint ignored;
+                uint foregroundThread = GetWindowThreadProcessId( foreground , out ignored );
+                uint ownThread = GetCurrentThreadId( );
+
+                if ( foregroundThread != 0 && foregroundThread != ownThread &&
+                     AttachThreadInput( ownThread , foregroundThread , true ) )
+                {
+                    try
+                    {
+                        ShowWindow( hwnd , SwRestore );
+                        SetForegroundWindow( hwnd );
+                        BringWindowToTop( hwnd );
+                        Thread.Sleep( 200 );
+                    }
+                    finally
+                    {
+                        AttachThreadInput( ownThread , foregroundThread , false );
+                    }
+                }
+            }
+            catch
+            {
+            }
+
             return GetForegroundWindow( ) == hwnd;
         }
 
@@ -282,5 +316,11 @@ namespace TelegramShareAddin
 
         [DllImport( "user32.dll" )]
         public static extern IntPtr GetAncestor( IntPtr hWnd , uint flags );
+
+        [DllImport( "user32.dll" )]
+        private static extern bool AttachThreadInput( uint idAttach , uint idAttachTo , bool attach );
+
+        [DllImport( "kernel32.dll" )]
+        private static extern uint GetCurrentThreadId( );
     }
 }

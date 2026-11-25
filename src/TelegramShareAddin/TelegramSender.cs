@@ -222,8 +222,8 @@ namespace TelegramShareAddin
 
                 if ( !opened )
                 {
-                    throw new InvalidOperationException( "Не удалось открыть чат «" + contact +
-                        "» в Telegram. Нажмите «Обновить из Telegram» и выберите чат заново." );
+                    throw new InvalidOperationException( "Чат «" + contact + "» не найден в списке Telegram. " +
+                        "Откройте его в самом Telegram и повторите отправку — либо выберите чат кнопкой «Обновить из Telegram»." );
                 }
 
                 Thread.Sleep( _settings.ChatOpenDelay );
@@ -270,14 +270,24 @@ namespace TelegramShareAddin
 
         private static bool TryOpenByUri( string contact )
         {
+            string c = ( contact ?? string.Empty ).Trim( );
+
+            // По ссылке открываем только то, что действительно является username,
+            // телефоном или числовым ID. Иначе Telegram показал бы ошибку, а вставка
+            // ушла бы в случайно открытый чат — это недопустимо.
+            bool username = c.StartsWith( "@" , StringComparison.Ordinal ) && c.Length > 1;
+            bool phone = c.StartsWith( "+" , StringComparison.Ordinal ) && c.Length > 4;
+            bool numericId = c.Length > 0 && c.All( char.IsDigit );
+
+            if ( !username && !phone && !numericId )
+            {
+                AddinLog.Warn( "Send: «" + c + "» не похоже на username/телефон/ID — ссылку не открываю" );
+                return false;
+            }
+
             try
             {
-                if ( contact.IndexOf( ' ' ) >= 0 )
-                {
-                    return false;
-                }
-
-                LaunchTelegram( BuildTelegramUri( contact ) );
+                LaunchTelegram( BuildTelegramUri( c ) );
                 return true;
             }
             catch ( Exception ex )
@@ -551,7 +561,49 @@ namespace TelegramShareAddin
                 }
             }
 
+            // «Избранное» (Saved Messages) — особая строка списка, у неё нет поля
+            // «Название». Добавляем её отдельно, иначе отправить туда нельзя.
+            if ( !result.Exists( c => IsSavedMessages( c.Name ) ) )
+            {
+                foreach ( ChatEntry e in entries )
+                {
+                    string saved = SavedMessagesName( e.OwnName );
+                    if ( saved != null && seen.Add( saved ) )
+                    {
+                        result.Insert( 0 , new MessengerChatInfo { Name = saved , Type = string.Empty } );
+                        break;
+                    }
+                }
+            }
+
             return result;
+        }
+
+        /// <summary>Имя первого сегмента, если элемент списка — «Избранное»; иначе null.</summary>
+        private static string SavedMessagesName( string ownName )
+        {
+            if ( string.IsNullOrEmpty( ownName ) )
+            {
+                return null;
+            }
+
+            string first = ownName.Split( ',' )[ 0 ].Trim( );
+            return IsSavedMessages( first ) ? first : null;
+        }
+
+        private static bool IsSavedMessages( string name )
+        {
+            if ( string.IsNullOrEmpty( name ) )
+            {
+                return false;
+            }
+
+            string n = name.Trim( );
+
+            return n.StartsWith( "Избранное" , StringComparison.OrdinalIgnoreCase ) ||
+                   n.StartsWith( "Избранные" , StringComparison.OrdinalIgnoreCase ) ||
+                   n.StartsWith( "Saved Messages" , StringComparison.OrdinalIgnoreCase ) ||
+                   n.StartsWith( "Saved messages" , StringComparison.OrdinalIgnoreCase );
         }
 
         public static bool OpenChat( int processId , string chatName , int timeoutMs )
@@ -615,6 +667,18 @@ namespace TelegramShareAddin
                 if ( string.Equals( e.Name , chatName , StringComparison.OrdinalIgnoreCase ) )
                 {
                     if ( SelectChatItem( e.Element ) )
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            // «Избранное»: имя лежит не в поле «Название», а в строке элемента.
+            if ( IsSavedMessages( chatName ) )
+            {
+                foreach ( ChatEntry e in entries )
+                {
+                    if ( SavedMessagesName( e.OwnName ) != null && SelectChatItem( e.Element ) )
                     {
                         return true;
                     }
