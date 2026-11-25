@@ -17,11 +17,11 @@
 2. Запустите **`install.bat`** двойным щелчком. **Права администратора не требуются.**
 3. Перезапустите Word, Excel и Outlook. На ленте появится вкладка **«Отправить»**.
 4. Проверка установки: **`check_install.bat`**.
-5. Удаление: **`uninstall.bat`** (файлы: `uninstall.bat -RemoveFiles`, настройки: `-RemoveData`).
+5. Удаление: **`uninstall.bat`** (при желании удалить и файлы: `uninstall.bat -RemoveFiles`).
 
 ### Что делает установщик
 
-- копирует файлы в `%APPDATA%\TelegramShareAddin\` (настройки и журнал лежат отдельно, в `%LOCALAPPDATA%\TelegramShareAddin\`);
+- копирует файлы в `%APPDATA%\TelegramShareAddin\`;
 - регистрирует COM-объекты в `HKCU\Software\Classes\` (Word, Excel, Outlook), права администратора не нужны;
 - добавляет ключи в `HKCU\Software\Microsoft\Office\Word\Addins\TelegramShareAddin`,
   `HKCU\Software\Microsoft\Office\Excel\Addins\TelegramShareExcel` и
@@ -101,7 +101,7 @@ gh repo create telegram-share-addin --public --source . --push
 - **Вкладка не появилась**: Файл → Параметры → Надстройки → Управление «Надстройки COM» → Перейти → включить `TelegramShareAddin` (Word) / `TelegramShareExcel` (Excel) / `TelegramShareOutlook` (Outlook).
 - **Outlook**: после установки перезапустите Outlook. Отправляется **выделенное или открытое письмо**, оно сохраняется в `.msg`.
 - **Excel**: на некоторых сборках Office вкладка появляется после явного включения надстройки в диалоге «Надстройки COM» (Excel→Файл→Параметры→Надстройки). Для отправки книги в любом случае работает **ПКМ → Отправить → Telegram** (или кнопки, если вкладка видна).
-- **Ошибки при работе**: лог `%LOCALAPPDATA%\TelegramShareAddin\addin.log`. Настройки там же, в `config.json`; удалить их можно через `uninstall.bat -RemoveData`.
+- **Ошибки при работе**: лог `%APPDATA%\TelegramShareAddin\addin.log`.
 - **DOCX/XLSX**: если `SaveCopyAs` недоступен, надстройка копирует сохранённый файл — сохраните документ перед отправкой.
 - **Скрипты**: сохраняйте `.ps1` в **UTF-8 с BOM**, иначе Windows PowerShell 5.1 испортит кириллицу.
 - **MAX**: если чат не открылся, нажмите «Обновить из MAX» и выберите чат из списка; username указывайте явно через `@` (тогда открывается `max://max.ru/<username>`).

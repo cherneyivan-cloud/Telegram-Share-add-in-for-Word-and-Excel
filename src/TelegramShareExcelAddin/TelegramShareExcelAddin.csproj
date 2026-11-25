@@ -39,11 +39,10 @@
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
-    <Reference Include="System.Net.Http" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
     <Reference Include="stdole">
-      <HintPath>..\..\lib\stdole.dll</HintPath>
+      <HintPath>C:\Windows\assembly\GAC\stdole\7.0.3300.0__b03f5f7f11d50a3a\stdole.dll</HintPath>
       <EmbedInteropTypes>true</EmbedInteropTypes>
       <Private>false</Private>
     </Reference>
@@ -51,7 +50,7 @@
     <Reference Include="UIAutomationTypes" />
     <Reference Include="WindowsBase" />
     <Reference Include="Extensibility">
-      <HintPath>..\..\lib\extensibility.dll</HintPath>
+      <HintPath>C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\PublicAssemblies\extensibility.dll</HintPath>
       <Private>true</Private>
     </Reference>
   </ItemGroup>
@@ -93,23 +92,11 @@
     <Compile Include="..\TelegramShareAddin\UpdateManager.cs">
       <Link>UpdateManager.cs</Link>
     </Compile>
-    <Compile Include="..\TelegramShareAddin\SendingForm.cs">
-      <Link>SendingForm.cs</Link>
-    </Compile>
     <Compile Include="..\TelegramShareAddin\SendForm.cs">
       <Link>SendForm.cs</Link>
     </Compile>
     <Compile Include="..\TelegramShareAddin\FormatForm.cs">
       <Link>FormatForm.cs</Link>
-    </Compile>
-    <Compile Include="..\TelegramShareAddin\Timeouts.cs">
-      <Link>Timeouts.cs</Link>
-    </Compile>
-    <Compile Include="..\TelegramShareAddin\UiWin.cs">
-      <Link>UiWin.cs</Link>
-    </Compile>
-    <Compile Include="..\TelegramShareAddin\AddinLog.cs">
-      <Link>AddinLog.cs</Link>
     </Compile>
     <Compile Include="..\TelegramShareAddin\Icons.cs">
       <Link>Icons.cs</Link>

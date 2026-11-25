@@ -1,78 +1,67 @@
 ﻿namespace TelegramShareAddin
 {
-    /// <summary>Идентификаторы элементов ленты — единственный источник правды.</summary>
-    internal static class RibbonIds
-    {
-        public const string Tab = "TelegramShareTab";
-        public const string SendVia = "TelegramShareSendViaButton";
-        public const string SendMessage = "TelegramShareButton";
-        public const string Attachments = "TelegramShareAttachmentsButton";
-        public const string Print = "TelegramSharePrintButton";
-        public const string Max = "TelegramShareMaxButton";
-        public const string PinQat = "TelegramSharePinQatButton";
-        public const string Update = "TelegramShareUpdateButton";
-    }
-
-    /// <summary>Подписи кнопок (по ним же ищет кнопки закрепление в панели быстрого доступа).</summary>
-    internal static class RibbonLabels
-    {
-        public const string SendMessage = "Отправить в Telegram";
-        public const string Max = "Отправить в MAX";
-    }
-
     /// <summary>Разметка ленты Office, общая для Word, Excel и Outlook.</summary>
     internal static class RibbonDefinition
     {
+        // Кнопка «Вложения» нужна только Outlook — в Word/Excel ленте её нет.
+        private const string AttachmentsButton =
+            "<button id=\"TelegramShareAttachmentsButton\" label=\"Вложения\" size=\"large\" getImage=\"GetButtonImage\"" +
+            " screentip=\"Отправить вложения письма\"" +
+            " supertip=\"Выбрать отдельные вложения текущего письма и отправить в Telegram\"" +
+            " onAction=\"OnSendAttachments\"/>";
+
+        private const string MaxButton =
+            "<button id=\"TelegramShareMaxButton\" label=\"Отправить в MAX\" size=\"large\" getImage=\"GetButtonImage\"" +
+            " screentip=\"Отправить в MAX\"" +
+            " supertip=\"Сохраняет документ и отправляет его выбранному чату MAX с подписью\"" +
+            " onAction=\"OnSendMax\"/>";
+
+        // Печать — стандартный диалог Outlook (Ctrl+P), где можно выбрать «Microsoft Print to PDF».
+        private const string PrintButton =
+            "<button id=\"TelegramSharePrintButton\" label=\"Печать (PDF)\" size=\"large\" getImage=\"GetButtonImage\"" +
+            " screentip=\"Печать письма (Ctrl+P)\"" +
+            " supertip=\"Открывает стандартный диалог печати Outlook — выберите «Microsoft Print to PDF»\"" +
+            " onAction=\"OnPrintPdf\"/>";
+
         public static readonly string Xml = Build( false );
         public static readonly string OutlookXml = Build( true );
 
         private static string Build( bool withAttachments )
         {
-            string attachments = withAttachments
-                ? Button( RibbonIds.Attachments , "Вложения" , "OnSendAttachments" ,
-                          "Отправить вложения письма" ,
-                          "Выбрать отдельные вложения текущего письма и отправить в Telegram" ) +
-                  Button( RibbonIds.Print , "Печать (PDF)" , "OnPrintPdf" ,
-                          "Печать письма (Ctrl+P)" ,
-                          "Открывает стандартный диалог печати Outlook — выберите «Microsoft Print to PDF»" )
-                : string.Empty;
+            string attachments = withAttachments ? ( AttachmentsButton + PrintButton ) : "";
 
             return "<customUI xmlns=\"http://schemas.microsoft.com/office/2006/01/customui\">" +
-                   "<ribbon><tabs>" +
-                   $"<tab id=\"{RibbonIds.Tab}\" label=\"Отправить\">" +
+                   "<ribbon>" +
+                   "<tabs>" +
+                   "<tab id=\"TelegramShareTab\" label=\"Отправить\">" +
                    "<group id=\"TelegramShareGroup\" label=\"Telegram\">" +
-                   Button( RibbonIds.SendVia , "Отправить в Telegram" , "OnSendViaTelegram" ,
-                           "Отправить через Telegram" ,
-                           "Сохраняет документ и открывает в Telegram окно «Переслать…» — выберите чат вручную" ) +
-                   Button( RibbonIds.SendMessage , RibbonLabels.SendMessage + "+сообщение" , "OnSendButton" ,
-                           "Отправить в Telegram с сообщением" ,
-                           "Сохраняет текущий документ и отправляет его выбранному контакту с подписью" ) +
+                   "<button id=\"TelegramShareSendViaButton\" label=\"Отправить в Telegram\"" +
+                   " size=\"large\" getImage=\"GetButtonImage\" screentip=\"Отправить через Telegram\"" +
+                   " supertip=\"Сохраняет документ и открывает в Telegram окно «Переслать…» — выберите чат вручную\"" +
+                   " onAction=\"OnSendViaTelegram\"/>" +
+                   "<button id=\"TelegramShareButton\" label=\"Отправить в Telegram+сообщение\"" +
+                   " size=\"large\" getImage=\"GetButtonImage\" screentip=\"Отправить в Telegram с сообщением\"" +
+                   " supertip=\"Сохраняет текущий документ и отправляет его выбранному контакту с подписью\"" +
+                   " onAction=\"OnSendButton\"/>" +
                    attachments +
                    "</group>" +
                    "<group id=\"TelegramShareMaxGroup\" label=\"MAX\">" +
-                   Button( RibbonIds.Max , RibbonLabels.Max , "OnSendMax" ,
-                           "Отправить в MAX" ,
-                           "Сохраняет документ и отправляет его выбранному чату MAX с подписью" ) +
+                   MaxButton +
                    "</group>" +
                    "<group id=\"TelegramShareLinksGroup\" label=\"Проект\">" +
-                   Button( RibbonIds.PinQat , "В заголовок окна" , "OnPinToQat" ,
-                           "Закрепить кнопки в заголовке окна" ,
-                           "Добавляет кнопки «Отправить в Telegram» и «Отправить в MAX» на панель быстрого доступа рядом с кнопкой «Сохранить». Достаточно нажать один раз" ) +
-                   Button( RibbonIds.Update , "Проверить обновления" , "OnCheckUpdates" ,
-                           "Проверить обновления Telegram Share" ,
-                           "Проверяет новую версию и предлагает установить обновление" ,
-                           null , "Refresh" ) +
-                   "</group></tab></tabs></ribbon></customUI>";
-        }
-
-        /// <summary>Кнопка ленты с единым набором атрибутов.</summary>
-        private static string Button( string id , string label , string action , string screentip , string supertip ,
-                                      string image = "GetButtonImage" , string imageMso = null )
-        {
-            string imageAttribute = imageMso != null ? $"imageMso=\"{imageMso}\"" : $"getImage=\"{image}\"";
-
-            return $"<button id=\"{id}\" label=\"{label}\" size=\"large\" {imageAttribute}" +
-                   $" screentip=\"{screentip}\" supertip=\"{supertip}\" onAction=\"{action}\"/>";
+                   "<button id=\"TelegramSharePinQatButton\" label=\"В заголовок окна\" size=\"large\"" +
+                   " getImage=\"GetButtonImage\" screentip=\"Закрепить кнопки в заголовке окна\"" +
+                   " supertip=\"Добавляет кнопки «Отправить в Telegram» и «Отправить в MAX» на панель быстрого доступа рядом с кнопкой «Сохранить». Достаточно нажать один раз\"" +
+                   " onAction=\"OnPinToQat\"/>" +
+                   "<button id=\"TelegramShareUpdateButton\" label=\"Проверить обновления\" size=\"large\"" +
+                   " imageMso=\"Refresh\" screentip=\"Проверить обновления Telegram Share\"" +
+                   " supertip=\"Проверяет новую версию и предлагает установить обновление\"" +
+                   " onAction=\"OnCheckUpdates\"/>" +
+                   "</group>" +
+                   "</tab>" +
+                   "</tabs>" +
+                   "</ribbon>" +
+                   "</customUI>";
         }
     }
 }

@@ -15,7 +15,7 @@ namespace TelegramShareAddin
     public enum SendFileFormat
     {
         Pdf = 0,
-        Native = 1
+        Docx = 1
     }
 
     /// <summary>Мессенджер, в который отправляется файл.</summary>
@@ -30,22 +30,11 @@ namespace TelegramShareAddin
     {
         public string Contact { get; set; }
         public string Message { get; set; }
+        public SendFileFormat Format { get; set; }
+        public Messenger Messenger { get; set; }
 
-        /// <summary>Путь исходного документа для буфера обмена (null — использовать временный).</summary>
-        public string ClipboardPath { get; set; }
-
-        /// <summary>true — контакт выбран из списка чатов (открываем чат кликом).</summary>
+        /// <summary>true — контакт выбран из списка чатов (открываем чат кликом(.</summary>
         public bool OpenByChatName { get; set; }
-    }
-
-    /// <summary>Подготовленный к отправке файл: временная копия и путь исходного документа.</summary>
-    public sealed class PreparedFile
-    {
-        /// <summary>Файл, который реально уходит в мессенджер.</summary>
-        public string TempPath { get; set; }
-
-        /// <summary>Путь исходного документа (null, если он ещё не сохранён).</summary>
-        public string OriginalPath { get; set; }
     }
 
     /// <summary>Информация о чате мессенджера.</summary>
@@ -76,25 +65,20 @@ namespace TelegramShareAddin
     /// </summary>
     public class TelegramSender
     {
+        private const int SW_RESTORE = 9;
 
         private readonly Settings _settings;
-
-        private static string _cachedExePath;
-        private static DateTime _cachedExeTime;
 
         public TelegramSender( Settings settings )
         {
             _settings = settings ?? new Settings( );
         }
 
-        /// <summary>Путь во временной папке с заданным именем файла. Каждая отправка — своя папка.</summary>
+        /// <summary>Путь во временной папке с заданным именем файла.</summary>
         public static string NewTempFile( string fileName )
         {
-            string root = Path.Combine( Path.GetTempPath( ) , "TelegramShare" );
-            string dir = Path.Combine( root , Guid.NewGuid( ).ToString( "N" ).Substring( 0 , 8 ) );
+            string dir = Path.Combine( Path.GetTempPath( ) , "TelegramShare" );
             Directory.CreateDirectory( dir );
-
-            // Имя сохраняем как у исходного документа: уникальность даёт папка, а не суффикс.
             return Path.Combine( dir , SanitizeFileName( fileName ) );
         }
 
@@ -112,35 +96,22 @@ namespace TelegramShareAddin
             return name;
         }
 
-        /// <summary>Удалить временные файлы прошлых отправок (старше суток) только из своей папки.</summary>
+        /// <summary>Удалить временные файлы прошлых отправок (старше суток).</summary>
         public static void CleanupOldTempFiles( )
         {
-            string root = Path.Combine( Path.GetTempPath( ) , "TelegramShare" );
+            DeleteOld( Path.Combine( Path.GetTempPath( ) , "TelegramShare" ) );
+            DeleteOld( Path.GetTempPath( ) );
+        }
 
+        private static void DeleteOld( string dir )
+        {
             try
             {
-                if ( !Directory.Exists( root ) )
+                if ( !Directory.Exists( dir ) )
                 {
                     return;
                 }
-
-                // Каждая отправка лежит в своей подпапке.
-                foreach ( string dir in Directory.GetDirectories( root ) )
-                {
-                    try
-                    {
-                        if ( Directory.GetLastWriteTime( dir ) < DateTime.Now.AddDays( -1 ) )
-                        {
-                            Directory.Delete( dir , true );
-                        }
-                    }
-                    catch
-                    {
-                    }
-                }
-
-                // Файлы прежнего формата (без подпапок).
-                foreach ( string file in Directory.GetFiles( root ) )
+                foreach ( string file in Directory.GetFiles( dir , "TelegramShare*" ) )
                 {
                     try
                     {
@@ -174,10 +145,10 @@ namespace TelegramShareAddin
             }
             finally
             {
-                // После отправки в буфере — путь исходного документа, а не временной копии.
+                // После сохранения полный путь к файлу остаётся в буфере обмена.
                 try
                 {
-                    ClipboardHelper.SetText( options.ClipboardPath ?? tempFile );
+                    ClipboardHelper.SetText( tempFile );
                 }
                 catch
                 {
@@ -188,15 +159,11 @@ namespace TelegramShareAddin
         /// <summary>Открыть в Telegram окно «Переслать…» для уже подготовленного файла.</summary>
         public void SendWithPickerPreparedFile( string tempFile )
         {
-            SendWithPickerPreparedFiles( new string[ ] { tempFile } , null );
+            SendWithPickerPreparedFiles( new string[ ] { tempFile } );
         }
 
-        private static string _lastPickerKey;
-        private static DateTime _lastPickerTime;
-        private const int PickerDedupeSeconds = 60;
-
         /// <summary>Открыть в Telegram окно «Переслать…» сразу для нескольких файлов.</summary>
-        public void SendWithPickerPreparedFiles( IEnumerable<string> files , string clipboardPath )
+        public void SendWithPickerPreparedFiles( IEnumerable<string> files )
         {
             var list = new List<string>( files );
             if ( list.Count == 0 )
@@ -204,42 +171,12 @@ namespace TelegramShareAddin
                 throw new InvalidOperationException( "Нет файлов для отправки." );
             }
 
-            // Повторный запуск не нужен: Telegram добавил бы ещё одну копию файла
-            // в окно «Переслать…», и ушло бы несколько одинаковых сообщений.
-            string key = string.IsNullOrEmpty( clipboardPath )
-                ? string.Join( "|" , list )
-                : clipboardPath;
-
-            if ( string.Equals( _lastPickerKey , key , StringComparison.OrdinalIgnoreCase ) &&
-                 ( DateTime.UtcNow - _lastPickerTime ).TotalSeconds < PickerDedupeSeconds )
-            {
-                AddinLog.Warn( "Send: повторный запуск «Переслать…» для того же файла пропущен" );
-                throw new InvalidOperationException(
-                    "Этот документ уже передан в Telegram. Откройте окно «Переслать…» и отправьте файл. " +
-                    "Если окно закрыто — подождите минуту и повторите." );
-            }
-
-            // Если окно «Переслать…» уже открыто (например, после предыдущего нажатия),
-            // новый файл добавится к тем же вложениям — и уйдёт несколько копий.
-            int telegramPid = GetTelegramProcessId( );
-            if ( TelegramUi.IsPickerOpen( telegramPid ) )
-            {
-                AddinLog.Warn( "Send: окно «Переслать…» уже открыто — повторный запуск пропущен" );
-                throw new InvalidOperationException(
-                    "В Telegram уже открыто окно «Переслать…». Отправьте файл в нём или закройте его, затем повторите." );
-            }
-
-            _lastPickerKey = key;
-            _lastPickerTime = DateTime.UtcNow;
-
             LaunchTelegramSendPath( list );
 
-            // После передачи в буфере — путь исходного файла (если он есть).
+            // После сохранения полный путь к файлу остаётся в буфере обмена.
             try
             {
-                ClipboardHelper.SetText( string.IsNullOrEmpty( clipboardPath )
-                    ? string.Join( Environment.NewLine , list )
-                    : clipboardPath );
+                ClipboardHelper.SetText( string.Join( Environment.NewLine , list ) );
             }
             catch
             {
@@ -248,12 +185,11 @@ namespace TelegramShareAddin
 
         private void OpenChatAndSend( SendOptions options )
         {
-            string contact = options.Contact.Trim( );
-            bool opened;
+            int telegramPid;
 
             if ( options.OpenByChatName )
             {
-                int telegramPid = GetTelegramProcessId( );
+                telegramPid = GetTelegramProcessId( );
                 if ( telegramPid == 0 )
                 {
                     throw new InvalidOperationException( "Telegram Desktop не запущен. Запустите Telegram и повторите." );
@@ -265,113 +201,55 @@ namespace TelegramShareAddin
                     throw new InvalidOperationException( "Не найдено окно Telegram Desktop. Разверните окно Telegram из трея." );
                 }
 
-                UiWin.EnsureForeground( hwnd );
-                Thread.Sleep( 300 );
+                ShowWindow( hwnd , SW_RESTORE );
+                SetForegroundWindow( hwnd );
+                Thread.Sleep( 400 );
 
-                opened = TelegramUi.OpenChat( telegramPid , contact , Timeouts.ChatOpenMs );
-
+                bool opened = TelegramUi.OpenChat( telegramPid , options.Contact.Trim( ) , 8000 );
                 if ( !opened )
                 {
-                    // Чат мог оказаться ниже в списке: пробуем открыть по ссылке.
-                    AddinCore.Log( "Send: чат не найден в списке, пробую ссылку" );
-                    opened = TryOpenByUri( contact , telegramPid );
+                    throw new InvalidOperationException( "Не удалось открыть чат «" + options.Contact + "» в Telegram. Нажмите «Обновить из Telegram» и выберите чат заново." );
                 }
 
-                if ( !opened )
-                {
-                    throw new InvalidOperationException( "Чат «" + contact + "» не найден в списке Telegram. " +
-                        "Откройте его в самом Telegram и повторите отправку — либо выберите чат кнопкой «Обновить из Telegram»." );
-                }
-
-                Thread.Sleep( _settings.ChatOpenDelay );
+                Thread.Sleep( _settings.ChatOpenDelayMs );
             }
             else
             {
-                int telegramPid = GetTelegramProcessId( );
-                string before = TelegramUi.MainWindowTitle( telegramPid );
+                string uri = BuildTelegramUri( options.Contact.Trim( ) );
+                LaunchTelegram( uri );
+                Thread.Sleep( _settings.ChatOpenDelayMs );
 
-                LaunchTelegram( BuildTelegramUri( contact ) );
-
-                if ( !TelegramUi.WaitForTitleChange( telegramPid , before , Timeouts.ChatOpenMs ) )
+                IntPtr hwnd = FindTelegramWindow( );
+                if ( hwnd == IntPtr.Zero )
                 {
-                    throw new InvalidOperationException( "Telegram не открыл чат «" + contact + "». " +
-                        "Проверьте имя и повторите — файл не отправлен." );
+                    throw new InvalidOperationException( "Не найдено окно Telegram Desktop. Разверните окно Telegram из трея и повторите." );
                 }
 
-                Thread.Sleep( _settings.ChatOpenDelay );
+                ShowWindow( hwnd , SW_RESTORE );
+                SetForegroundWindow( hwnd );
+                Thread.Sleep( 400 );
+
+                telegramPid = GetTelegramProcessId( );
             }
 
-            IntPtr window = FindTelegramWindow( );
-            if ( window == IntPtr.Zero )
-            {
-                throw new InvalidOperationException( "Не найдено окно Telegram Desktop. Разверните окно Telegram из трея и повторите." );
-            }
-
-            if ( !UiWin.EnsureForeground( window ) )
-            {
-                throw new InvalidOperationException( "Не удалось вывести Telegram на передний план — отправка отменена." );
-            }
-
-            int pid = UiWin.ProcessIdOf( window );
-
-            // Клавиши уходят в активное окно: вставляем только когда фокус точно в Telegram.
-            UiWin.SendKeysTo( pid , "^v" , "Telegram" );
+            SendKeys.SendWait( "^v" );
             AddinCore.Log( "Send: файл вставлен, ожидаю диалог Telegram" );
-            Thread.Sleep( _settings.PasteDelay );
+            Thread.Sleep( _settings.PasteDelayMs );
 
-            bool confirmed = TelegramUi.ConfirmSend( options.Message , pid , Timeouts.SendDialogMs );
+            bool confirmed = TelegramUi.ConfirmSend( options.Message , telegramPid , 8000 );
             AddinCore.Log( "Send: UIA подтверждение = " + confirmed );
 
             if ( !confirmed )
             {
-                // Резервный путь — тоже только при фокусе в Telegram, иначе текст уйдёт чужому приложению.
                 if ( !string.IsNullOrEmpty( options.Message ) )
                 {
-                    UiWin.SendKeysTo( pid , EscapeSendKeys( options.Message ) , "Telegram" );
+                    SendKeys.SendWait( EscapeSendKeys( options.Message ) );
                     Thread.Sleep( 300 );
                 }
-
-                UiWin.SendKeysTo( pid , "{ENTER}" , "Telegram" );
-            }
-        }
-
-        private static bool TryOpenByUri( string contact , int processId )
-        {
-            string c = ( contact ?? string.Empty ).Trim( );
-
-            // По ссылке открываем только то, что действительно является username,
-            // телефоном или числовым ID. Иначе Telegram показал бы ошибку, а вставка
-            // ушла бы в случайно открытый чат — это недопустимо.
-            bool username = c.StartsWith( "@" , StringComparison.Ordinal ) && c.Length > 1;
-            bool phone = c.StartsWith( "+" , StringComparison.Ordinal ) && c.Length > 4;
-            bool numericId = c.Length > 0 && c.All( char.IsDigit );
-
-            if ( !username && !phone && !numericId )
-            {
-                AddinLog.Warn( "Send: «" + c + "» не похоже на username/телефон/ID — ссылку не открываю" );
-                return false;
+                SendKeys.SendWait( "{ENTER}" );
             }
 
-            string before = TelegramUi.MainWindowTitle( processId );
-
-            try
-            {
-                LaunchTelegram( BuildTelegramUri( c ) );
-            }
-            catch ( Exception ex )
-            {
-                AddinLog.Warn( "Send: ссылка не открылась — " + AddinLog.Describe( ex ) );
-                return false;
-            }
-
-            // Если чат не открылся, заголовок окна не изменится — вставлять файл нельзя.
-            if ( !TelegramUi.WaitForTitleChange( processId , before , Timeouts.ChatOpenMs ) )
-            {
-                AddinLog.Warn( "Send: Telegram не открыл чат по ссылке «" + c + "»" );
-                return false;
-            }
-
-            return true;
+            Thread.Sleep( 1500 );
         }
 
         private static void LaunchTelegram( string uri )
@@ -412,37 +290,18 @@ namespace TelegramShareAddin
 
         private static string FindTelegramExe( )
         {
-            if ( !string.IsNullOrEmpty( _cachedExePath ) && File.Exists( _cachedExePath ) &&
-                 ( DateTime.UtcNow - _cachedExeTime ).TotalMinutes < 5 )
+            foreach ( var p in GetTelegramProcesses( ) )
             {
-                return _cachedExePath;
-            }
-
-            Process[ ] processes = UiWin.FindProcesses( "Telegram" );
-            try
-            {
-                foreach ( Process p in processes )
+                try
                 {
-                    try
+                    string path = p.MainModule.FileName;
+                    if ( !string.IsNullOrEmpty( path ) && File.Exists( path ) )
                     {
-                        string path = p.MainModule.FileName;
-                        if ( !string.IsNullOrEmpty( path ) && File.Exists( path ) )
-                        {
-                            _cachedExePath = path;
-                            _cachedExeTime = DateTime.UtcNow;
-                            return path;
-                        }
-                    }
-                    catch
-                    {
+                        return path;
                     }
                 }
-            }
-            finally
-            {
-                foreach ( Process p in processes )
+                catch
                 {
-                    p.Dispose( );
                 }
             }
 
@@ -503,63 +362,32 @@ namespace TelegramShareAddin
 
         private static IntPtr FindTelegramWindow( )
         {
-            Process[ ] processes = UiWin.FindProcesses( "Telegram" );
-            try
+            foreach ( var p in GetTelegramProcesses( ) )
             {
-                foreach ( Process p in processes )
+                IntPtr h = p.MainWindowHandle;
+                if ( h != IntPtr.Zero && IsWindowVisible( h ) )
                 {
-                    try
-                    {
-                        IntPtr h = p.MainWindowHandle;
-                        if ( h != IntPtr.Zero && UiWin.IsWindowVisible( h ) )
-                        {
-                            return h;
-                        }
-                    }
-                    catch
-                    {
-                    }
+                    return h;
                 }
             }
-            finally
-            {
-                foreach ( Process p in processes )
-                {
-                    p.Dispose( );
-                }
-            }
-
             return IntPtr.Zero;
         }
 
         public static int GetTelegramProcessId( )
         {
-            Process[ ] processes = UiWin.FindProcesses( "Telegram" );
-            try
+            foreach ( var p in GetTelegramProcesses( ) )
             {
-                foreach ( Process p in processes )
+                if ( p.MainWindowHandle != IntPtr.Zero )
                 {
-                    try
-                    {
-                        if ( p.MainWindowHandle != IntPtr.Zero )
-                        {
-                            return p.Id;
-                        }
-                    }
-                    catch
-                    {
-                    }
+                    return p.Id;
                 }
             }
-            finally
-            {
-                foreach ( Process p in processes )
-                {
-                    p.Dispose( );
-                }
-            }
-
             return 0;
+        }
+
+        private static IEnumerable<Process> GetTelegramProcesses( )
+        {
+            return Process.GetProcesses( ).Where( x => x.ProcessName.IndexOf( "Telegram" , StringComparison.OrdinalIgnoreCase ) >= 0 );
         }
 
         private static string EscapeSendKeys( string text )
@@ -590,8 +418,14 @@ namespace TelegramShareAddin
             return sb.ToString( );
         }
 
+        [DllImport( "user32.dll" )]
+        private static extern bool SetForegroundWindow( IntPtr hWnd );
 
+        [DllImport( "user32.dll" )]
+        private static extern bool ShowWindow( IntPtr hWnd , int nCmdShow );
 
+        [DllImport( "user32.dll" )]
+        private static extern bool IsWindowVisible( IntPtr hWnd );
     }
 
     /// <summary>
@@ -609,19 +443,14 @@ namespace TelegramShareAddin
 
         public static List<MessengerChatInfo> GetChats( int processId )
         {
-            return GetChats( processId , CancellationToken.None );
-        }
-
-        public static List<MessengerChatInfo> GetChats( int processId , CancellationToken token )
-        {
             var result = new List<MessengerChatInfo>( );
-            if ( processId == 0 || token.IsCancellationRequested )
+            if ( processId == 0 )
             {
                 return result;
             }
 
             AutomationElement chatList = FindFirstChatList( processId );
-            if ( chatList == null || token.IsCancellationRequested )
+            if ( chatList == null )
             {
                 return result;
             }
@@ -645,49 +474,7 @@ namespace TelegramShareAddin
                 }
             }
 
-            // «Избранное» (Saved Messages) — особая строка списка, у неё нет поля
-            // «Название». Добавляем её отдельно, иначе отправить туда нельзя.
-            if ( !result.Exists( c => IsSavedMessages( c.Name ) ) )
-            {
-                foreach ( ChatEntry e in entries )
-                {
-                    string saved = SavedMessagesName( e.OwnName );
-                    if ( saved != null && seen.Add( saved ) )
-                    {
-                        result.Insert( 0 , new MessengerChatInfo { Name = saved , Type = string.Empty } );
-                        break;
-                    }
-                }
-            }
-
             return result;
-        }
-
-        /// <summary>Имя первого сегмента, если элемент списка — «Избранное»; иначе null.</summary>
-        private static string SavedMessagesName( string ownName )
-        {
-            if ( string.IsNullOrEmpty( ownName ) )
-            {
-                return null;
-            }
-
-            string first = ownName.Split( ',' )[ 0 ].Trim( );
-            return IsSavedMessages( first ) ? first : null;
-        }
-
-        private static bool IsSavedMessages( string name )
-        {
-            if ( string.IsNullOrEmpty( name ) )
-            {
-                return false;
-            }
-
-            string n = name.Trim( );
-
-            return n.StartsWith( "Избранное" , StringComparison.OrdinalIgnoreCase ) ||
-                   n.StartsWith( "Избранные" , StringComparison.OrdinalIgnoreCase ) ||
-                   n.StartsWith( "Saved Messages" , StringComparison.OrdinalIgnoreCase ) ||
-                   n.StartsWith( "Saved messages" , StringComparison.OrdinalIgnoreCase );
         }
 
         public static bool OpenChat( int processId , string chatName , int timeoutMs )
@@ -698,107 +485,35 @@ namespace TelegramShareAddin
             }
 
             int deadline = Environment.TickCount + timeoutMs;
-
             while ( Environment.TickCount < deadline )
             {
-                AutomationElement chatList;
                 try
                 {
-                    chatList = FindFirstChatList( processId );
+                    AutomationElement chatList = FindFirstChatList( processId );
+                    if ( chatList != null )
+                    {
+                        List<ChatEntry> entries = ReadChatEntries( chatList );
+                        foreach ( ChatEntry e in entries )
+                        {
+                            if ( string.Equals( e.Name , chatName , StringComparison.OrdinalIgnoreCase ) )
+                            {
+                                if ( SelectChatItem( e.Element ) )
+                                {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
                 }
                 catch
                 {
-                    chatList = null;
                 }
 
-                if ( chatList == null )
-                {
-                    Thread.Sleep( 300 );
-                    continue;
-                }
-
-                if ( SelectByName( chatList , chatName ) )
-                {
-                    return true;
-                }
-
-                // Чат мог быть ниже видимой части списка — листаем вниз.
-                if ( !ScrollList( chatList , ScrollAmount.LargeIncrement ) )
-                {
-                    break;
-                }
-
-                Thread.Sleep( 250 );
+                Thread.Sleep( 300 );
             }
 
             return false;
         }
-
-        private static bool SelectByName( AutomationElement chatList , string chatName )
-        {
-            List<ChatEntry> entries;
-            try
-            {
-                entries = ReadChatEntries( chatList );
-            }
-            catch
-            {
-                return false;
-            }
-
-            foreach ( ChatEntry e in entries )
-            {
-                if ( string.Equals( e.Name , chatName , StringComparison.OrdinalIgnoreCase ) )
-                {
-                    if ( SelectChatItem( e.Element ) )
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            // «Избранное»: имя лежит не в поле «Название», а в строке элемента.
-            if ( IsSavedMessages( chatName ) )
-            {
-                foreach ( ChatEntry e in entries )
-                {
-                    if ( SavedMessagesName( e.OwnName ) != null && SelectChatItem( e.Element ) )
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        private static bool ScrollList( AutomationElement list , ScrollAmount amount )
-        {
-            try
-            {
-                object pattern;
-                if ( !list.TryGetCurrentPattern( ScrollPattern.Pattern , out pattern ) )
-                {
-                    return false;
-                }
-
-                var scroll = (ScrollPattern) pattern;
-                if ( !scroll.Current.VerticallyScrollable || scroll.Current.VerticalScrollPercent >= 99 )
-                {
-                    return false;
-                }
-
-                scroll.Scroll( ScrollAmount.NoAmount , amount );
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private static AutomationElement _cachedSendButton;
-        private static bool _captionSkippedLogged;
 
         public static bool ConfirmSend( string caption , int processId , int timeoutMs )
         {
@@ -808,50 +523,33 @@ namespace TelegramShareAddin
             }
 
             int deadline = Environment.TickCount + timeoutMs;
-
             while ( Environment.TickCount < deadline )
             {
                 try
                 {
-                    // Кнопку ищем один раз: повторный обход всего дерева каждые 300 мс
-                    // слишком дорог, а элемент живёт до смены чата.
-                    AutomationElement button = _cachedSendButton;
-
-                    if ( button == null )
+                    foreach ( AutomationElement window in TopWindows( processId ) )
                     {
-                        foreach ( AutomationElement window in TopWindows( processId ) )
+                        AutomationElement button = FindSendButton( window );
+                        if ( button != null )
                         {
-                            AutomationElement candidate = FindSendButton( window );
-                            if ( candidate != null )
+                            if ( !string.IsNullOrEmpty( caption ) )
                             {
-                                _cachedSendButton = candidate;
-                                button = candidate;
                                 SetCaption( window , caption );
-                                break;
+                            }
+                            if ( InvokeElement( button ) )
+                            {
+                                return true;
                             }
                         }
                     }
-
-                    if ( button != null && InvokeElement( button ) )
-                    {
-                        return true;
-                    }
                 }
-                catch ( Exception ex )
+                catch
                 {
-                    _cachedSendButton = null;
-
-                    if ( !_captionSkippedLogged )
-                    {
-                        AddinLog.Warn( "Send: подтверждение через UIA: " + AddinLog.Describe( ex ) );
-                        _captionSkippedLogged = true;
-                    }
                 }
 
-                Thread.Sleep( Timeouts.PollStepMs );
+                Thread.Sleep( 300 );
             }
 
-            _cachedSendButton = null;
             return false;
         }
 
@@ -1040,112 +738,6 @@ namespace TelegramShareAddin
             return AutomationElement.RootElement.FindAll( TreeScope.Children , condition );
         }
 
-        /// <summary>Окно «Переслать…» открыто? Тогда новый файл добавлять нельзя — уйдёт лишняя копия.</summary>
-        public static bool IsPickerOpen( int processId )
-        {
-            if ( processId == 0 )
-            {
-                return false;
-            }
-
-            foreach ( AutomationElement window in TopWindows( processId ) )
-            {
-                try
-                {
-                    bool hasCaption = false;
-
-                    var elements = window.FindAll( TreeScope.Descendants , Condition.TrueCondition );
-
-                    foreach ( AutomationElement element in elements )
-                    {
-                        ControlType type;
-                        string name;
-
-                        try
-                        {
-                            type = element.Current.ControlType;
-                            name = element.Current.Name;
-                        }
-                        catch
-                        {
-                            continue;
-                        }
-
-                        if ( string.IsNullOrEmpty( name ) )
-                        {
-                            continue;
-                        }
-
-                        // Поле подписи есть только в окне отправки файла.
-                        if ( type == ControlType.Edit &&
-                             ( name.IndexOf( "Подпись" , StringComparison.OrdinalIgnoreCase ) >= 0 ||
-                               name.IndexOf( "Caption" , StringComparison.OrdinalIgnoreCase ) >= 0 ) )
-                        {
-                            hasCaption = true;
-                            continue;
-                        }
-
-                        if ( hasCaption && type == ControlType.Button &&
-                             ( name.StartsWith( "Отправить" , StringComparison.OrdinalIgnoreCase ) ||
-                               name.StartsWith( "Send" , StringComparison.OrdinalIgnoreCase ) ) )
-                        {
-                            return true;
-                        }
-                    }
-                }
-                catch
-                {
-                }
-            }
-
-            return false;
-        }
-
-        /// <summary>Заголовок главного окна Telegram (в нём видно имя открытого чата).</summary>
-        public static string MainWindowTitle( int processId )
-        {
-            if ( processId == 0 )
-            {
-                return null;
-            }
-
-            foreach ( AutomationElement window in TopWindows( processId ) )
-            {
-                try
-                {
-                    System.Windows.Rect rect = window.Current.BoundingRectangle;
-                    if ( rect.Width > 200 && rect.Height > 200 )
-                    {
-                        return window.Current.Name;
-                    }
-                }
-                catch
-                {
-                }
-            }
-
-            return null;
-        }
-
-        /// <summary>true, если заголовок окна изменился (Telegram открыл другой чат).</summary>
-        public static bool WaitForTitleChange( int processId , string before , int timeoutMs )
-        {
-            int deadline = Environment.TickCount + timeoutMs;
-
-            while ( Environment.TickCount < deadline )
-            {
-                string now = MainWindowTitle( processId );
-                if ( !string.IsNullOrEmpty( now ) && !string.Equals( now , before , StringComparison.Ordinal ) )
-                {
-                    return true;
-                }
-
-                Thread.Sleep( Timeouts.PollStepMs );
-            }
-
-            return false;
-        }
-
         private static bool SelectChatItem( AutomationElement item )
         {
             try
@@ -1241,18 +833,10 @@ namespace TelegramShareAddin
 
         private static void SetCaption( AutomationElement root , string caption )
         {
-            if ( string.IsNullOrEmpty( caption ) )
-            {
-                return;
-            }
-
             try
             {
                 var condition = new PropertyCondition( AutomationElement.ControlTypeProperty , ControlType.Edit );
                 AutomationElementCollection edits = root.FindAll( TreeScope.Descendants , condition );
-
-                AutomationElement target = null;
-                int candidates = 0;
 
                 foreach ( AutomationElement edit in edits )
                 {
@@ -1265,26 +849,16 @@ namespace TelegramShareAddin
                         continue;
                     }
 
-                    candidates++;
-                    target = edit;
-                }
-
-                // Поле подписи должно быть однозначным: иначе текст уйдёт в чужое поле.
-                if ( candidates != 1 || target == null )
-                {
-                    AddinLog.Warn( "Send: поле подписи не найдено однозначно (вариантов: " + candidates + ") — отправляю без подписи" );
-                    return;
-                }
-
-                object pattern;
-                if ( target.TryGetCurrentPattern( ValuePattern.Pattern , out pattern ) )
-                {
-                    ( (ValuePattern)pattern ).SetValue( caption );
+                    object pattern;
+                    if ( edit.TryGetCurrentPattern( ValuePattern.Pattern , out pattern ) )
+                    {
+                        ( (ValuePattern)pattern ).SetValue( caption );
+                        return;
+                    }
                 }
             }
-            catch ( Exception ex )
+            catch
             {
-                AddinLog.Warn( "Send: не удалось вписать подпись — " + AddinLog.Describe( ex ) );
             }
         }
 
