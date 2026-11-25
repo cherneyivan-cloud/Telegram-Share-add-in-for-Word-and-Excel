@@ -192,6 +192,17 @@ namespace TelegramShareAddin
         }
 
         private static readonly object PickerGate = new object( );
+        private static int _pickerActive;
+        private static System.Threading.Timer _pickerWatchdog;
+
+        /// <summary>Открыто ли окно «Переслать…», запущенное надстройкой.</summary>
+        public static bool IsPickerBusy
+        {
+            get
+            {
+                return Volatile.Read( ref _pickerActive ) != 0;
+            }
+        }
 
         /// <summary>Открыть в Telegram окно «Переслать…» сразу для нескольких файлов.</summary>
         public void SendWithPickerPreparedFiles( IEnumerable<string> files , string clipboardPath )
@@ -202,20 +213,38 @@ namespace TelegramShareAddin
                 throw new InvalidOperationException( "Нет файлов для отправки." );
             }
 
-            lock ( PickerGate )
+            // Пока окно «Переслать…» открыто, второй запуск запрещён: Telegram добавил бы
+            // файл к уже открытым вложениям, и ушло бы несколько одинаковых сообщений.
+            if ( Interlocked.CompareExchange( ref _pickerActive , 1 , 0 ) != 0 )
             {
-                int pid = GetTelegramProcessId( );
-
-                // Telegram добавляет каждый новый файл к уже открытому окну «Переслать…».
-                // Поэтому сначала закрываем его, чтобы в новом окне был ровно один файл.
-                if ( !TelegramUi.ClosePicker( pid , 3000 ) )
-                {
-                    throw new InvalidOperationException(
-                        "В Telegram открыто окно «Переслать…», закрыть его не удалось. Закройте окно вручную и повторите." );
-                }
-
-                LaunchTelegramSendPath( list );
+                AddinLog.Warn( "Send: окно «Переслать…» ещё открыто — повторный запуск пропущен" );
+                throw new InvalidOperationException(
+                    "Окно «Переслать…» уже открыто в Telegram. Отправьте файл в нём или закройте его, затем повторите." );
             }
+
+            try
+            {
+                lock ( PickerGate )
+                {
+                    int pid = GetTelegramProcessId( );
+
+                    // Окно могло остаться от прошлой версии или другого запуска.
+                    if ( !TelegramUi.ClosePicker( pid , 3000 ) )
+                    {
+                        throw new InvalidOperationException(
+                            "В Telegram открыто окно «Переслать…», закрыть его не удалось. Закройте окно вручную и повторите." );
+                    }
+
+                    LaunchTelegramSendPath( list );
+                }
+            }
+            catch
+            {
+                Interlocked.Exchange( ref _pickerActive , 0 );
+                throw;
+            }
+
+            StartPickerWatchdog( );
 
             // После передачи в буфере — путь исходного файла (если он есть).
             try
@@ -227,6 +256,51 @@ namespace TelegramShareAddin
             catch
             {
             }
+        }
+
+        /// <summary>
+        /// Снимает запрет, когда окно «Переслать…» действительно закрылось.
+        /// Первые 5 секунд флаг держится всегда — окно может ещё не успеть отрисоваться.
+        /// </summary>
+        private static void StartPickerWatchdog( )
+        {
+            System.Threading.Timer previous = _pickerWatchdog;
+            _pickerWatchdog = null;
+
+            if ( previous != null )
+            {
+                try { previous.Dispose( ); } catch { }
+            }
+
+            int ticks = 0;
+
+            _pickerWatchdog = new System.Threading.Timer( state =>
+            {
+                ticks++;
+
+                bool open = false;
+                try
+                {
+                    open = TelegramUi.IsPickerOpen( GetTelegramProcessId( ) );
+                }
+                catch
+                {
+                }
+
+                bool minHoldPassed = ticks > 5;
+                bool timedOut = ticks > 600;
+
+                if ( timedOut || ( minHoldPassed && !open ) )
+                {
+                    Interlocked.Exchange( ref _pickerActive , 0 );
+
+                    System.Threading.Timer timer = _pickerWatchdog;
+                    if ( timer != null )
+                    {
+                        try { timer.Dispose( ); } catch { }
+                    }
+                }
+            } , null , 1000 , 1000 );
         }
 
         private void OpenChatAndSend( SendOptions options )
