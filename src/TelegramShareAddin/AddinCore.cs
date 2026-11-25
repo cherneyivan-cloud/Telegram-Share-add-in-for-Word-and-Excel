@@ -44,8 +44,9 @@ namespace TelegramShareAddin
         /// <summary>Запоминает интерфейс ленты, чтобы обновлять состояние кнопок.</summary>
         public static void AttachRibbon( IRibbonUI ribbon )
         {
+            // Во время загрузки ленты Invalidate() не вызываем: на части сборок Office
+            // это приводит к отказу отрисовки настраиваемой вкладки.
             _ribbon = ribbon;
-            Invalidate( );
         }
 
         /// <summary>Пересчитать getEnabled/getImage у всех элементов ленты.</summary>
@@ -197,7 +198,6 @@ namespace TelegramShareAddin
                         settings.RememberContactName( form.Contact );
                     }
                     settings.LastFormat = format == SendFileFormat.Native ? "DOCX" : "PDF";
-                    settings.LastMessenger = chosen == Messenger.Max ? "MAX" : "Telegram";
                     settings.Save( );
                 }
 

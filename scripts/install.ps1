@@ -1,6 +1,6 @@
 ﻿#requires -Version 5.1
 <#
-    Установка надстроек Telegram Share для Microsoft Word и Microsoft Excel.
+    Установка надстроек Telegram Share для Microsoft Word, Microsoft Excel и Microsoft Outlook.
     Без прав администратора: всё пишется в HKCU и %APPDATA%.
     Поддерживает запуск из папки-пакета (dist) и из репозитория.
 #>

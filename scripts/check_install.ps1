@@ -1,6 +1,6 @@
 ﻿#requires -Version 5.1
 <#
-    Проверка установки надстроек Telegram Share (Word и Excel).
+    Проверка установки надстроек Telegram Share (Word, Excel и Outlook).
 #>
 
 $ErrorActionPreference = "Continue"
@@ -20,8 +20,10 @@ foreach ( $i in $items ) {
     Write-Host ( "--- " + $i.App + " (" + $i.ProgId + ") ---" )
 
     $dllPath = Join-Path $InstallDir $i.Dll
+    $dllVersion = ""
     if ( Test-Path -Path $dllPath ) {
         Write-Host ( "  [OK] файл: " + $dllPath ) -ForegroundColor Green
+        try { $dllVersion = [Reflection.AssemblyName]::GetAssemblyName( $dllPath ).Version.ToString( ) } catch { }
     }
     else {
         Write-Host ( "  [FAIL] нет файла " + $dllPath ) -ForegroundColor Red
@@ -31,10 +33,16 @@ foreach ( $i in $items ) {
     $inproc = "HKCU:\Software\Classes\CLSID\$($i.Clsid)\InprocServer32"
     if ( Test-Path -Path $inproc ) {
         $server = ( Get-Item -Path $inproc ).GetValue( "" )
-        $cls = ( Get-ItemProperty -Path $inproc -Name "Class" -ErrorAction SilentlyContinue ).Class
         if ( $server -eq "mscoree.dll" ) { Write-Host "  [OK] InprocServer32 = mscoree.dll" -ForegroundColor Green }
         else { Write-Host ( "  [WARN] InprocServer32 = " + $server ) -ForegroundColor Yellow }
-        Write-Host ( "  [OK] Class = " + $cls ) -ForegroundColor Green
+
+        $regAsm = ( Get-ItemProperty -Path $inproc -Name "Assembly" -ErrorAction SilentlyContinue ).Assembly
+        if ( $dllVersion -and $regAsm -notlike "*Version=$dllVersion*" ) {
+            Write-Host ( "  [WARN] версия в реестре ($regAsm) не совпадает с DLL ($dllVersion). Переустановите." ) -ForegroundColor Yellow
+        }
+        else {
+            Write-Host "  [OK] версия сборки совпадает" -ForegroundColor Green
+        }
     }
     else {
         Write-Host ( "  [FAIL] нет ключа " + $inproc ) -ForegroundColor Red
@@ -56,6 +64,19 @@ foreach ( $i in $items ) {
     try {
         $obj = New-Object -ComObject $i.ProgId
         Write-Host "  [OK] COM-объект создаётся" -ForegroundColor Green
+
+        try {
+            $xml = $obj.GetCustomUI( "Microsoft." + $i.App )
+            if ( $xml -and ( "$xml" ).IndexOf( "<customUI" ) -ge 0 ) {
+                Write-Host "  [OK] GetCustomUI возвращает разметку ленты" -ForegroundColor Green
+            }
+            else {
+                Write-Host "  [WARN] GetCustomUI не вернул разметку" -ForegroundColor Yellow
+            }
+        }
+        catch {
+            Write-Host "  [WARN] GetCustomUI не вызвался: " + $_.Exception.Message -ForegroundColor Yellow
+        }
     }
     catch {
         Write-Host ( "  [FAIL] COM-объект не создаётся: " + $_.Exception.Message ) -ForegroundColor Red
@@ -70,7 +91,7 @@ foreach ( $i in $items ) {
 
 Write-Host ""
 if ( $allOk ) {
-    Write-Host "ИТОГ: установка корректна. Перезапустите Word и Excel." -ForegroundColor Green
+    Write-Host "ИТОГ: установка корректна. Перезапустите Word, Excel и Outlook." -ForegroundColor Green
 }
 else {
     Write-Host "ИТОГ: обнаружены проблемы. Запустите install.ps1 и перезапустите Office." -ForegroundColor Red

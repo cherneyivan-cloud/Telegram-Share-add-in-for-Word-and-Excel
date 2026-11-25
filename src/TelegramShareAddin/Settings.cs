@@ -59,8 +59,6 @@ namespace TelegramShareAddin
         /// <summary>Последний выбранный формат: "PDF" или "DOCX".</summary>
         public string LastFormat { get; set; } = "PDF";
 
-        /// <summary>Последний выбранный мессенджер: "Telegram" или "MAX".</summary>
-        public string LastMessenger { get; set; } = "Telegram";
 
         /// <summary>Задержка после открытия чата перед вставкой файла, мс.</summary>
         public int ChatOpenDelayMs { get; set; } = 2500;
@@ -89,16 +87,6 @@ namespace TelegramShareAddin
             }
         }
 
-        /// <summary>Мессенджер по умолчанию — из последней отправки.</summary>
-        public Messenger DefaultMessenger
-        {
-            get
-            {
-                return string.Equals( LastMessenger , "MAX" , StringComparison.OrdinalIgnoreCase )
-                    ? Messenger.Max
-                    : Messenger.Telegram;
-            }
-        }
 
         /// <summary>Загрузить настройки. Ошибки не показываются: они попадают в лог и в LastLoadError.</summary>
         public static Settings Load( )
@@ -242,9 +230,7 @@ namespace TelegramShareAddin
                 LastFormat = "DOCX";
             }
 
-            LastMessenger = string.Equals( LastMessenger , "MAX" , StringComparison.OrdinalIgnoreCase )
-                ? "MAX"
-                : "Telegram";
+
         }
 
         private static int Clamp( int value , int min , int max , int fallback )

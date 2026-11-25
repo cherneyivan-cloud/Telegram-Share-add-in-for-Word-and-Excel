@@ -72,7 +72,14 @@ namespace TelegramShareAddin
 
         public void OnRibbonLoad( IRibbonUI ribbon )
         {
-            AddinCore.AttachRibbon( ribbon );
+            try
+            {
+                AddinCore.AttachRibbon( ribbon );
+            }
+            catch ( Exception ex )
+            {
+                AddinCore.Log( "OnRibbonLoad ERROR: " + ex.Message );
+            }
         }
 
         public bool OnGetEnabled( IRibbonControl control )

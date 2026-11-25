@@ -161,11 +161,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1 -RemoveFiles
 
 Если выбран чат из списка, надстройка открывает его **кликом по нему в мессенджере** (а не по ссылке), после чего вставляет файл. Если контакт введён вручную, для Telegram используется `tg://`, а для MAX — ссылка `max://max.ru/<username>` **только при явном `@username`**. Для MAX можно также указать **имя чата как оно отображается в списке** — надстройка найдёт его прокруткой списка (без ссылок, чтобы не открывалась страница «Ссылка устарела»).
 
-Сохранённые контакты хранятся в `%APPDATA%\TelegramShareAddin\config.json` в поле `RecentContacts`.
+Сохранённые контакты хранятся в `%LOCALAPPDATA%\TelegramShareAddin\config.json` в поле `RecentContacts`.
 
 ## Настройки
 
-Файл конфигурации: `%APPDATA%\TelegramShareAddin\config.json` (создаётся автоматически):
+Файл конфигурации: `%LOCALAPPDATA%\TelegramShareAddin\config.json` (создаётся автоматически). Настройки лежат отдельно от папки установки, поэтому обновление и удаление надстройки не уносят контакты. Запись атомарная, рядом хранится резервная копия `config.json.bak`. Пример:
 
 ```json
 {
@@ -198,7 +198,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall.ps1 -RemoveFiles
 - Класс `Addin` реализует `IDTExtensibility2` (жизненный цикл COM-надстройки) и `IRibbonExtensibility` (лента). Интерфейс `IDTExtensibility2` берётся из `Extensibility.dll`, а не объявляется вручную — у настоящего метода DispId 1–5, иначе Word создаёт объект, но не вызывает `OnConnection`.
 - Лента задаётся декларативно (XML customUI); callback кнопки: `TelegramShareAddin.Addin.OnSendButton` (вызов через IDispatch).
 - Отправка идёт без Bot API: глубокие ссылки `tg://resolve?domain=...`, `tg://resolve?phone=...`, `tg://user?id=...` + буфер обмена (`Clipboard.SetFileDropList`) + `SendKeys` (`^v`, подпись, `{ENTER}`).
-- Настройки — Newtonsoft.Json, `%APPDATA%\TelegramShareAddin\config.json`. `Newtonsoft.Json.dll` лежит в папке надстройки и загружается как обычная зависимость через `CodeBase` из реестра, поэтому не зависит от версий, уже загруженных хостом.
+- Настройки — Newtonsoft.Json, `%LOCALAPPDATA%\TelegramShareAddin\config.json`. `Newtonsoft.Json.dll` лежит в папке надстройки и загружается как обычная зависимость через `CodeBase` из реестра, поэтому не зависит от версий, уже загруженных хостом.
 
 - Сборка: .NET Framework 4.8, `x64` (обязательно для 64-битного Word), без strong-name, COM-регистрация пользовательская (в `HKCU`).
 
@@ -288,5 +288,5 @@ Telegram Desktop сам предложит сжатие/подтверждени
   Для другой редакции VS (Community/Enterprise) или другого пути поправьте `HintPath` в `.csproj`.
   Использовать самодельное объявление этого интерфейса нельзя: у настоящего метода имеют
   DispId 1–5, иначе Word создаёт объект, но не вызывает `OnConnection` и помечает надстройку сбойной.
-- Надстройка ведёт диагностический лог `%APPDATA%\TelegramShareAddin\addin.log`
+- Надстройка ведёт диагностический лог `%LOCALAPPDATA%\TelegramShareAddin\addin.log` (ротация 1 МБ × 3)
   (загрузка, `OnConnection`, `GetCustomUI`, ошибки). Полезно при разборе проблем.

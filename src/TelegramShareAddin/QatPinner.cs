@@ -17,7 +17,7 @@ namespace TelegramShareAddin
     {
         private const string TabLabel = "Отправить";
 
-        private static readonly string[ ] ButtonLabels = { "Отправить в Telegram" , "Отправить в MAX" };
+        private static readonly string[ ] ButtonLabels = { RibbonLabels.SendMessage , RibbonLabels.Max };
 
         private static int _running;
 
