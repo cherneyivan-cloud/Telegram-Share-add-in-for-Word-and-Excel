@@ -71,28 +71,6 @@ namespace TelegramShareAddin
             return AddinCore.GetImage( control );
         }
 
-        public void OnRibbonLoad( IRibbonUI ribbon )
-        {
-            try
-            {
-                AddinCore.AttachRibbon( ribbon );
-            }
-            catch ( Exception ex )
-            {
-                AddinCore.Log( "OnRibbonLoad ERROR: " + ex.Message );
-            }
-        }
-
-        public bool OnGetEnabled( IRibbonControl control )
-        {
-            string id = control != null ? control.Id : null;
-            if ( id == RibbonIds.PinQat || id == RibbonIds.Update )
-            {
-                return true;
-            }
-            return HasOpenDocument( );
-        }
-
         public void OnSendButton( IRibbonControl control )
         {
             EnsureSettings( );

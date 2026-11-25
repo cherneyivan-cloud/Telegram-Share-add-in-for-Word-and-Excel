@@ -37,7 +37,7 @@
                           "Открывает стандартный диалог печати Outlook — выберите «Microsoft Print to PDF»" )
                 : string.Empty;
 
-            return "<customUI xmlns=\"http://schemas.microsoft.com/office/2006/01/customui\" onLoad=\"OnRibbonLoad\">" +
+            return "<customUI xmlns=\"http://schemas.microsoft.com/office/2006/01/customui\">" +
                    "<ribbon><tabs>" +
                    $"<tab id=\"{RibbonIds.Tab}\" label=\"Отправить\">" +
                    "<group id=\"TelegramShareGroup\" label=\"Telegram\">" +
@@ -57,23 +57,21 @@
                    "<group id=\"TelegramShareLinksGroup\" label=\"Проект\">" +
                    Button( RibbonIds.PinQat , "В заголовок окна" , "OnPinToQat" ,
                            "Закрепить кнопки в заголовке окна" ,
-                           "Добавляет кнопки «Отправить в Telegram» и «Отправить в MAX» на панель быстрого доступа рядом с кнопкой «Сохранить». Достаточно нажать один раз" ,
-                           false ) +
+                           "Добавляет кнопки «Отправить в Telegram» и «Отправить в MAX» на панель быстрого доступа рядом с кнопкой «Сохранить». Достаточно нажать один раз" ) +
                    Button( RibbonIds.Update , "Проверить обновления" , "OnCheckUpdates" ,
                            "Проверить обновления Telegram Share" ,
                            "Проверяет новую версию и предлагает установить обновление" ,
-                           false , null , "Refresh" ) +
+                           null , "Refresh" ) +
                    "</group></tab></tabs></ribbon></customUI>";
         }
 
         /// <summary>Кнопка ленты с единым набором атрибутов.</summary>
         private static string Button( string id , string label , string action , string screentip , string supertip ,
-                                      bool enabledByDocument = true , string image = "GetButtonImage" , string imageMso = null )
+                                      string image = "GetButtonImage" , string imageMso = null )
         {
             string imageAttribute = imageMso != null ? $"imageMso=\"{imageMso}\"" : $"getImage=\"{image}\"";
-            string enabledAttribute = enabledByDocument ? " getEnabled=\"OnGetEnabled\"" : string.Empty;
 
-            return $"<button id=\"{id}\" label=\"{label}\" size=\"large\" {imageAttribute}{enabledAttribute}" +
+            return $"<button id=\"{id}\" label=\"{label}\" size=\"large\" {imageAttribute}" +
                    $" screentip=\"{screentip}\" supertip=\"{supertip}\" onAction=\"{action}\"/>";
         }
     }

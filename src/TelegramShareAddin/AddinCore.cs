@@ -39,30 +39,7 @@ namespace TelegramShareAddin
         private static IPictureDisp _imageMax;
         private static IPictureDisp _imagePin;
         private static IPictureDisp _imageTelegram;
-        private static IRibbonUI _ribbon;
 
-        /// <summary>Запоминает интерфейс ленты, чтобы обновлять состояние кнопок.</summary>
-        public static void AttachRibbon( IRibbonUI ribbon )
-        {
-            // Во время загрузки ленты Invalidate() не вызываем: на части сборок Office
-            // это приводит к отказу отрисовки настраиваемой вкладки.
-            _ribbon = ribbon;
-        }
-
-        /// <summary>Пересчитать getEnabled/getImage у всех элементов ленты.</summary>
-        public static void Invalidate( )
-        {
-            try
-            {
-                if ( _ribbon != null )
-                {
-                    _ribbon.Invalidate( );
-                }
-            }
-            catch
-            {
-            }
-        }
 
         public static string GetCustomUi( string ribbonId , bool outlook )
         {
@@ -250,10 +227,6 @@ namespace TelegramShareAddin
                 AddinLog.Error( "OnSendButton" , ex );
                 MessageBox.Show( "Ошибка: " + ex.Message , "Отправить сообщение" , MessageBoxButtons.OK , MessageBoxIcon.Error );
             }
-            finally
-            {
-                Invalidate( );
-            }
         }
 
         public static void SendVia( Settings settings , SendRequest request )
@@ -300,10 +273,6 @@ namespace TelegramShareAddin
             {
                 AddinLog.Error( "OnSendViaTelegram" , ex );
                 MessageBox.Show( "Ошибка: " + ex.Message , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Error );
-            }
-            finally
-            {
-                Invalidate( );
             }
         }
 
