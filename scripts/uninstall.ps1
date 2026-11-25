@@ -1,14 +1,20 @@
 ﻿#requires -Version 5.1
 <#
-    Удаление надстроек Telegram Share (Word и Excel).
+    Удаление надстроек Telegram Share (Word, Excel и Outlook).
+
+    Программа ставится в %APPDATA%\TelegramShareAddin, данные пользователя
+    (config.json, addin.log) лежат в %LOCALAPPDATA%\TelegramShareAddin и по умолчанию
+    сохраняются: удалить их можно ключом -RemoveData.
 #>
 param(
-    [switch]$RemoveFiles
+    [switch]$RemoveFiles,
+    [switch]$RemoveData
 )
 
 $ErrorActionPreference = "SilentlyContinue"
 
 $InstallDir = Join-Path $env:APPDATA "TelegramShareAddin"
+$DataDir = Join-Path $env:LOCALAPPDATA "TelegramShareAddin"
 
 $items = @(
     @{ ProgId = "TelegramShareAddin"; Clsid = "{AD3B6C2F-4E5F-4A8B-9C1D-3E4F5A6B7C8D}"; App = "Word" } ,
@@ -37,4 +43,13 @@ if ( Test-Path -Path $InstallDir ) {
     }
 }
 
-Write-Host "Готово. Перезапустите Word и Excel."
+if ( $RemoveData ) {
+    if ( Test-Path -Path $DataDir ) {
+        Remove-Item -Path $DataDir -Recurse -Force
+        Write-Host "Настройки и журнал удалены ($DataDir)."
+    }
+} elseif ( Test-Path -Path $DataDir ) {
+    Write-Host "Настройки сохранены: $DataDir (удалить: uninstall.ps1 -RemoveData)." -ForegroundColor DarkGray
+}
+
+Write-Host "Готово. Перезапустите Word, Excel и Outlook."

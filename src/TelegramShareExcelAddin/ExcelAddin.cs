@@ -156,21 +156,9 @@ namespace TelegramShareAddin
             string path = TelegramSender.NewTempFile( baseName + ext );
             TelegramSender.CleanupOldTempFiles( );
 
-            try
-            {
-                ExcelDocumentSaver.Save( workbook , path , format );
-                return path;
-            }
-            finally
-            {
-                try
-                {
-                    Marshal.ReleaseComObject( workbook );
-                }
-                catch
-                {
-                }
-            }
+            // Книга принадлежит хосту: освобождать её RCW нельзя.
+            ExcelDocumentSaver.Save( workbook , path , format );
+            return path;
         }
     }
 }

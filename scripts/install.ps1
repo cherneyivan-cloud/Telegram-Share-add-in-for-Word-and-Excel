@@ -45,7 +45,15 @@ function Register-Addin( $progId, $clsid, $className, $assemblyName, $dllPath, $
     Set-ItemProperty -Path $inprocKey -Name "(default)" -Value "mscoree.dll"
     Set-ItemProperty -Path $inprocKey -Name "ThreadingModel" -Value "Both"
     Set-ItemProperty -Path $inprocKey -Name "Class" -Value $className
-    Set-ItemProperty -Path $inprocKey -Name "Assembly" -Value ( $assemblyName + ", Version=1.0.0.0, Culture=neutral, PublicKeyToken=null" )
+
+    # Версию берём из самой сборки, чтобы реестр не расходился с DLL.
+    $asmVersion = "1.0.0.0"
+    try {
+        $asmVersion = [Reflection.AssemblyName]::GetAssemblyName( $dllPath ).Version.ToString( )
+    } catch {
+        Write-Host ( "  не удалось прочитать версию " + $dllPath + ": " + $_.Exception.Message ) -ForegroundColor Yellow
+    }
+    Set-ItemProperty -Path $inprocKey -Name "Assembly" -Value ( $assemblyName + ", Version=" + $asmVersion + ", Culture=neutral, PublicKeyToken=null" )
     Set-ItemProperty -Path $inprocKey -Name "RuntimeVersion" -Value "v4.0.30319"
     Set-ItemProperty -Path $inprocKey -Name "CodeBase" -Value ( "file:///" + ( $dllPath -replace "\\", "/" ) )
 
@@ -111,12 +119,33 @@ if ( $outlookSrc ) {
         "TelegramShareOutlook" ( Join-Path $InstallDir "TelegramShareOutlook.dll" ) "Outlook" "Отправить в Telegram"
 }
 
-# --- Сброс списка отключённых надстроек Office ---
+# --- Сброс записей о сбоях только для наших надстроек ---
+$ourProgIds = @( "TelegramShareAddin", "TelegramShareExcel", "TelegramShareOutlook" )
 foreach ( $app in @( "Word", "Excel", "Outlook" ) ) {
     $resiliency = "HKCU:\Software\Microsoft\Office\16.0\$app\Resiliency"
-    if ( Test-Path -Path $resiliency ) {
-        Remove-Item -Path "$resiliency\DisabledItems" -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item -Path "$resiliency\CrashingAddinList" -Recurse -Force -ErrorAction SilentlyContinue
+    if ( -not ( Test-Path -Path $resiliency ) ) { continue }
+
+    foreach ( $listName in @( "DisabledItems", "CrashingAddinList" ) ) {
+        $listKey = "$resiliency\$listName"
+        if ( -not ( Test-Path -Path $listKey ) ) { continue }
+
+        $key = Get-Item -Path $listKey
+        foreach ( $valueName in @( $key.GetValueNames( ) ) ) {
+            $raw = $key.GetValue( $valueName )
+            if ( $raw -is [byte[]] ) {
+                $text = [Text.Encoding]::Unicode.GetString( $raw )
+            } else {
+                $text = [string]$raw
+            }
+
+            foreach ( $prog in $ourProgIds ) {
+                if ( $text -like "*$prog*" ) {
+                    Remove-ItemProperty -Path $listKey -Name $valueName -Force -ErrorAction SilentlyContinue
+                    Write-Host ( "  сброшена запись о сбое: " + $app + " / " + $prog ) -ForegroundColor Yellow
+                    break
+                }
+            }
+        }
     }
 }
 

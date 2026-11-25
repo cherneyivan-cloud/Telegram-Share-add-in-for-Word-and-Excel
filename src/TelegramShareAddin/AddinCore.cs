@@ -24,7 +24,6 @@ namespace TelegramShareAddin
         {
             try
             {
-                Log( "GetCustomUI: " + ribbonId );
                 if ( string.IsNullOrEmpty( ribbonId ) || ribbonId.StartsWith( "Microsoft." , StringComparison.OrdinalIgnoreCase ) )
                 {
                     return outlook ? RibbonDefinition.OutlookXml : RibbonDefinition.Xml;
@@ -33,7 +32,7 @@ namespace TelegramShareAddin
             }
             catch ( Exception ex )
             {
-                Log( "GetCustomUI ERROR: " + ex.ToString( ) );
+                AddinLog.Error( "GetCustomUI" , ex );
                 return null;
             }
         }
@@ -226,17 +225,9 @@ namespace TelegramShareAddin
             }
         }
 
-        public static void Log( string message )        {
-            try
-            {
-                string dir = Path.Combine( Environment.GetFolderPath( Environment.SpecialFolder.ApplicationData ) , "TelegramShareAddin" );
-                Directory.CreateDirectory( dir );
-                string line = DateTime.Now.ToString( "yyyy-MM-dd HH:mm:ss.fff" ) + "  " + message + Environment.NewLine;
-                File.AppendAllText( Path.Combine( dir , "addin.log" ) , line );
-            }
-            catch
-            {
-            }
+        public static void Log( string message )
+        {
+            AddinLog.Info( message );
         }
     }
 }

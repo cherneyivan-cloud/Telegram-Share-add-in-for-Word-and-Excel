@@ -133,7 +133,6 @@ namespace TelegramShareAddin
                     }
                     finally
                     {
-                        try { Marshal.ReleaseComObject( attachment ); } catch { }
                     }
                 }
 
@@ -156,7 +155,6 @@ namespace TelegramShareAddin
                         }
                         finally
                         {
-                            try { Marshal.ReleaseComObject( attachment ); } catch { }
                         }
                     }
 
@@ -174,10 +172,7 @@ namespace TelegramShareAddin
             }
             finally
             {
-                if ( item != null )
-                {
-                    try { Marshal.ReleaseComObject( item ); } catch { }
-                }
+                // Элемент принадлежит хосту (Selection/CurrentItem): его RCW не освобождаем.
             }
         }
 
@@ -256,10 +251,7 @@ namespace TelegramShareAddin
             }
             finally
             {
-                if ( item != null )
-                {
-                    try { Marshal.ReleaseComObject( item ); } catch { }
-                }
+                // Элемент принадлежит хосту (Selection/CurrentItem): его RCW не освобождаем.
             }
         }
 
@@ -315,20 +307,8 @@ namespace TelegramShareAddin
                 throw new InvalidOperationException( NoDocumentMessage );
             }
 
-            try
-            {
-                return OutlookItemSaver.Save( item , format );
-            }
-            finally
-            {
-                try
-                {
-                    Marshal.ReleaseComObject( item );
-                }
-                catch
-                {
-                }
-            }
+            // Элемент принадлежит хосту (Selection/CurrentItem): его RCW не освобождаем.
+            return OutlookItemSaver.Save( item , format );
         }
 
         private object GetActiveItem( )
