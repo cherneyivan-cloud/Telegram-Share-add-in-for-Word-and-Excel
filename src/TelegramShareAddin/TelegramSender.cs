@@ -216,6 +216,16 @@ namespace TelegramShareAddin
                 return;
             }
 
+            // Если окно «Переслать…» уже открыто (например, после предыдущего нажатия),
+            // новый файл добавится к тем же вложениям — и уйдёт несколько копий.
+            int telegramPid = GetTelegramProcessId( );
+            if ( TelegramUi.IsPickerOpen( telegramPid ) )
+            {
+                AddinLog.Warn( "Send: окно «Переслать…» уже открыто — повторный запуск пропущен" );
+                throw new InvalidOperationException(
+                    "В Telegram уже открыто окно «Переслать…». Отправьте файл в нём или закройте его, затем повторите." );
+            }
+
             _lastPickerKey = key;
             _lastPickerTime = DateTime.UtcNow;
 
@@ -1025,6 +1035,67 @@ namespace TelegramShareAddin
         {
             var condition = new PropertyCondition( AutomationElement.ProcessIdProperty , processId );
             return AutomationElement.RootElement.FindAll( TreeScope.Children , condition );
+        }
+
+        /// <summary>Окно «Переслать…» открыто? Тогда новый файл добавлять нельзя — уйдёт лишняя копия.</summary>
+        public static bool IsPickerOpen( int processId )
+        {
+            if ( processId == 0 )
+            {
+                return false;
+            }
+
+            foreach ( AutomationElement window in TopWindows( processId ) )
+            {
+                try
+                {
+                    bool hasCaption = false;
+
+                    var elements = window.FindAll( TreeScope.Descendants , Condition.TrueCondition );
+
+                    foreach ( AutomationElement element in elements )
+                    {
+                        ControlType type;
+                        string name;
+
+                        try
+                        {
+                            type = element.Current.ControlType;
+                            name = element.Current.Name;
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+
+                        if ( string.IsNullOrEmpty( name ) )
+                        {
+                            continue;
+                        }
+
+                        // Поле подписи есть только в окне отправки файла.
+                        if ( type == ControlType.Edit &&
+                             ( name.IndexOf( "Подпись" , StringComparison.OrdinalIgnoreCase ) >= 0 ||
+                               name.IndexOf( "Caption" , StringComparison.OrdinalIgnoreCase ) >= 0 ) )
+                        {
+                            hasCaption = true;
+                            continue;
+                        }
+
+                        if ( hasCaption && type == ControlType.Button &&
+                             ( name.StartsWith( "Отправить" , StringComparison.OrdinalIgnoreCase ) ||
+                               name.StartsWith( "Send" , StringComparison.OrdinalIgnoreCase ) ) )
+                        {
+                            return true;
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return false;
         }
 
         /// <summary>Заголовок главного окна Telegram (в нём видно имя открытого чата).</summary>
