@@ -42,8 +42,8 @@
                    $"<tab id=\"{RibbonIds.Tab}\" label=\"Отправить\">" +
                    "<group id=\"TelegramShareGroup\" label=\"Telegram\">" +
                    Button( RibbonIds.SendVia , "Отправить в Telegram" , "OnSendViaTelegram" ,
-                           "Отправить через Telegram" ,
-                           "Сохраняет документ и открывает в Telegram окно «Переслать…» — выберите чат вручную" ) +
+                           "Отправить в текущий чат Telegram" ,
+                           "Сохраняет документ и отправляет его в открытый в Telegram чат. Перед нажатием откройте нужный чат" ) +
                    Button( RibbonIds.SendMessage , RibbonLabels.SendMessage + "+сообщение" , "OnSendButton" ,
                            "Отправить в Telegram с сообщением" ,
                            "Сохраняет текущий документ и отправляет его выбранному контакту с подписью" ) +

@@ -277,28 +277,14 @@ namespace TelegramShareAddin
                     format = SendFileFormat.Native;
                 }
 
-                // Не тратим время на сохранение копии, если окно «Переслать…» уже открыто.
-                if ( TelegramSender.IsPickerBusy )
-                {
-                    throw new InvalidOperationException(
-                        "Окно «Переслать…» уже открыто в Telegram. Отправьте файл в нём или закройте его, затем повторите." );
-                }
-
                 PreparedFile prepared = request.SaveDocument( format );
 
                 SendRunner.Run( "Передаю в Telegram…" , ( ) =>
                 {
-                    new TelegramSender( settings ).SendWithPickerPreparedFiles(
-                        new[ ] { prepared.TempPath } , prepared.OriginalPath );
-                } );
+                    new TelegramSender( settings ).SendToActiveChat( prepared.TempPath , prepared.OriginalPath );
+                } , true );
 
-                AddinLog.Info( "Передано в Telegram (окно «Переслать…»)" );
-
-                MessageBox.Show(
-                    "Файл передан в Telegram. В окне «Переслать…» выберите чат и отправьте." ,
-                    "Telegram Share" ,
-                    MessageBoxButtons.OK ,
-                    MessageBoxIcon.Information );
+                AddinLog.Info( "Передано в Telegram (текущий чат)" );
             }
             catch ( Exception ex )
             {

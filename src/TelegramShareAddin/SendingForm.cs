@@ -23,16 +23,23 @@ namespace TelegramShareAddin
         /// <summary>Работа завершилась до показа окна — закрыться сразу после OnShown.</summary>
         public bool FinishRequested { get; set; }
 
-        public SendingForm( string text )
+        public SendingForm( string text , bool silent = false )
         {
             Text = "Telegram Share";
-            FormBorderStyle = FormBorderStyle.FixedToolWindow;
-            StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size( 420 , 96 );
+            FormBorderStyle = silent ? FormBorderStyle.None : FormBorderStyle.FixedToolWindow;
+            StartPosition = silent ? FormStartPosition.Manual : FormStartPosition.CenterScreen;
+            ClientSize = silent ? new Size( 1 , 1 ) : new Size( 420 , 96 );
             ShowInTaskbar = false;
-            TopMost = true;
+            TopMost = !silent;
             MinimizeBox = false;
             MaximizeBox = false;
+
+            if ( silent )
+            {
+                Opacity = 0;
+                Location = new Point( -2000 , -2000 );
+                return;
+            }
 
             var label = new Label
             {
@@ -111,7 +118,7 @@ namespace TelegramShareAddin
     {
         private static int _busy;
 
-        public static void Run( string caption , Action work )
+        public static void Run( string caption , Action work , bool silent = false )
         {
             if ( work == null )
             {
@@ -133,7 +140,7 @@ namespace TelegramShareAddin
 
             try
             {
-                using ( var form = new SendingForm( caption ) )
+                using ( var form = new SendingForm( caption , silent ) )
                 {
                     var thread = new Thread( ( ) =>
                     {
