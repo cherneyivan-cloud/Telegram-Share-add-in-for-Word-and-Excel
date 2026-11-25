@@ -277,6 +277,13 @@ namespace TelegramShareAddin
                     format = SendFileFormat.Native;
                 }
 
+                // Не тратим время на сохранение копии, если окно «Переслать…» уже открыто.
+                if ( TelegramSender.IsPickerBusy )
+                {
+                    throw new InvalidOperationException(
+                        "Окно «Переслать…» уже открыто в Telegram. Отправьте файл в нём или закройте его, затем повторите." );
+                }
+
                 PreparedFile prepared = request.SaveDocument( format );
 
                 SendRunner.Run( "Передаю в Telegram…" , ( ) =>

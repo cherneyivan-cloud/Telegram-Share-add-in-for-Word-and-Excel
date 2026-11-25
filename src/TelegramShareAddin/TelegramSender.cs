@@ -191,9 +191,17 @@ namespace TelegramShareAddin
             SendWithPickerPreparedFiles( new string[ ] { tempFile } , null );
         }
 
-        private static string _lastPickerKey;
-        private static DateTime _lastPickerTime;
-        private const int PickerDedupeSeconds = 60;
+        private static int _pickerActive;
+        private static System.Threading.Timer _pickerWatchdog;
+
+        /// <summary>Открыто ли сейчас окно «Переслать…», запущенное надстройкой.</summary>
+        public static bool IsPickerBusy
+        {
+            get
+            {
+                return Volatile.Read( ref _pickerActive ) != 0;
+            }
+        }
 
         /// <summary>Открыть в Telegram окно «Переслать…» сразу для нескольких файлов.</summary>
         public void SendWithPickerPreparedFiles( IEnumerable<string> files , string clipboardPath )
@@ -204,35 +212,35 @@ namespace TelegramShareAddin
                 throw new InvalidOperationException( "Нет файлов для отправки." );
             }
 
-            // Повторный запуск не нужен: Telegram добавил бы ещё одну копию файла
-            // в окно «Переслать…», и ушло бы несколько одинаковых сообщений.
-            string key = string.IsNullOrEmpty( clipboardPath )
-                ? string.Join( "|" , list )
-                : clipboardPath;
-
-            if ( string.Equals( _lastPickerKey , key , StringComparison.OrdinalIgnoreCase ) &&
-                 ( DateTime.UtcNow - _lastPickerTime ).TotalSeconds < PickerDedupeSeconds )
+            // Пока предыдущее окно «Переслать…» не закрыто, второй запуск запрещён:
+            // Telegram добавил бы файл к уже открытым вложениям, и ушло бы несколько копий.
+            if ( Interlocked.CompareExchange( ref _pickerActive , 1 , 0 ) != 0 )
             {
-                AddinLog.Warn( "Send: повторный запуск «Переслать…» для того же файла пропущен" );
+                AddinLog.Warn( "Send: окно «Переслать…» ещё открыто — повторный запуск пропущен" );
                 throw new InvalidOperationException(
-                    "Этот документ уже передан в Telegram. Откройте окно «Переслать…» и отправьте файл. " +
-                    "Если окно закрыто — подождите минуту и повторите." );
+                    "Окно «Переслать…» уже открыто в Telegram. Отправьте файл в нём или закройте его, затем повторите." );
             }
 
-            // Если окно «Переслать…» уже открыто (например, после предыдущего нажатия),
-            // новый файл добавится к тем же вложениям — и уйдёт несколько копий.
-            int telegramPid = GetTelegramProcessId( );
-            if ( TelegramUi.IsPickerOpen( telegramPid ) )
+            try
             {
-                AddinLog.Warn( "Send: окно «Переслать…» уже открыто — повторный запуск пропущен" );
-                throw new InvalidOperationException(
-                    "В Telegram уже открыто окно «Переслать…». Отправьте файл в нём или закройте его, затем повторите." );
+                // Дополнительная проверка: окно могло остаться открытым с прошлого раза
+                // (например, если сторожевой поток ещё не снял флаг).
+                if ( TelegramUi.IsPickerOpen( GetTelegramProcessId( ) ) )
+                {
+                    AddinLog.Warn( "Send: окно «Переслать…» уже открыто — запуск пропущен" );
+                    throw new InvalidOperationException(
+                        "Окно «Переслать…» уже открыто в Telegram. Отправьте файл в нём или закройте его, затем повторите." );
+                }
+
+                LaunchTelegramSendPath( list );
+            }
+            catch
+            {
+                Interlocked.Exchange( ref _pickerActive , 0 );
+                throw;
             }
 
-            _lastPickerKey = key;
-            _lastPickerTime = DateTime.UtcNow;
-
-            LaunchTelegramSendPath( list );
+            StartPickerWatchdog( );
 
             // После передачи в буфере — путь исходного файла (если он есть).
             try
@@ -244,6 +252,52 @@ namespace TelegramShareAddin
             catch
             {
             }
+        }
+
+        /// <summary>
+        /// Снимает запрет, когда окно «Переслать…» закрылось (файл отправлен или окно закрыли).
+        /// Отдельный поток нужен, потому что отправка не должна ждать пользователя.
+        /// </summary>
+        private static void StartPickerWatchdog( )
+        {
+            System.Threading.Timer previous = _pickerWatchdog;
+            _pickerWatchdog = null;
+
+            if ( previous != null )
+            {
+                try { previous.Dispose( ); } catch { }
+            }
+
+            int ticks = 0;
+
+            _pickerWatchdog = new System.Threading.Timer( state =>
+            {
+                ticks++;
+
+                bool open = false;
+                try
+                {
+                    open = TelegramUi.IsPickerOpen( GetTelegramProcessId( ) );
+                }
+                catch
+                {
+                }
+
+                // Даём окну 10 секунд на появление, затем ждём его закрытия.
+                bool appeared = ticks > 10;
+                bool timedOut = ticks > 600;
+
+                if ( timedOut || ( appeared && !open ) )
+                {
+                    Interlocked.Exchange( ref _pickerActive , 0 );
+
+                    System.Threading.Timer timer = _pickerWatchdog;
+                    if ( timer != null )
+                    {
+                        try { timer.Dispose( ); } catch { }
+                    }
+                }
+            } , null , 1000 , 1000 );
         }
 
         private void OpenChatAndSend( SendOptions options )
