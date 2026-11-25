@@ -193,6 +193,7 @@ namespace TelegramShareAddin
 
         private static string _lastPickerKey;
         private static DateTime _lastPickerTime;
+        private const int PickerDedupeSeconds = 60;
 
         /// <summary>Открыть в Telegram окно «Переслать…» сразу для нескольких файлов.</summary>
         public void SendWithPickerPreparedFiles( IEnumerable<string> files , string clipboardPath )
@@ -203,17 +204,19 @@ namespace TelegramShareAddin
                 throw new InvalidOperationException( "Нет файлов для отправки." );
             }
 
-            // Повторный запуск в течение 10 секунд не нужен: Telegram добавил бы
-            // второй экземпляр файла в то же окно «Переслать…», и ушло бы две копии.
+            // Повторный запуск не нужен: Telegram добавил бы ещё одну копию файла
+            // в окно «Переслать…», и ушло бы несколько одинаковых сообщений.
             string key = string.IsNullOrEmpty( clipboardPath )
                 ? string.Join( "|" , list )
                 : clipboardPath;
 
             if ( string.Equals( _lastPickerKey , key , StringComparison.OrdinalIgnoreCase ) &&
-                 ( DateTime.UtcNow - _lastPickerTime ).TotalSeconds < 10 )
+                 ( DateTime.UtcNow - _lastPickerTime ).TotalSeconds < PickerDedupeSeconds )
             {
                 AddinLog.Warn( "Send: повторный запуск «Переслать…» для того же файла пропущен" );
-                return;
+                throw new InvalidOperationException(
+                    "Этот документ уже передан в Telegram. Откройте окно «Переслать…» и отправьте файл. " +
+                    "Если окно закрыто — подождите минуту и повторите." );
             }
 
             // Если окно «Переслать…» уже открыто (например, после предыдущего нажатия),

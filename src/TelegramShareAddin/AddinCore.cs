@@ -285,8 +285,13 @@ namespace TelegramShareAddin
                         new[ ] { prepared.TempPath } , prepared.OriginalPath );
                 } );
 
-                // Без модального подтверждения: окно «Переслать…» открыто в Telegram.
                 AddinLog.Info( "Передано в Telegram (окно «Переслать…»)" );
+
+                MessageBox.Show(
+                    "Файл передан в Telegram. В окне «Переслать…» выберите чат и отправьте." ,
+                    "Telegram Share" ,
+                    MessageBoxButtons.OK ,
+                    MessageBoxIcon.Information );
             }
             catch ( Exception ex )
             {
