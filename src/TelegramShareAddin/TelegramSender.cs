@@ -228,11 +228,25 @@ namespace TelegramShareAddin
                 {
                     int pid = GetTelegramProcessId( );
 
-                    // Окно могло остаться от прошлой версии или другого запуска.
-                    if ( !TelegramUi.ClosePicker( pid , 3000 ) )
+                    if ( pid != 0 )
                     {
-                        throw new InvalidOperationException(
-                            "В Telegram открыто окно «Переслать…», закрыть его не удалось. Закройте окно вручную и повторите." );
+                        // Любое открытое окно «Переслать…» закрываем клавишей Escape:
+                        // это не зависит от UI Automation и срабатывает сразу.
+                        IntPtr hwnd = FindTelegramWindow( );
+
+                        if ( hwnd != IntPtr.Zero && UiWin.EnsureForeground( hwnd ) )
+                        {
+                            try
+                            {
+                                UiWin.SendKeysTo( pid , "{ESC}" , "Telegram" );
+                                Thread.Sleep( 300 );
+                                AddinLog.Info( "Send: окно «Переслать…» закрыто перед новой отправкой" );
+                            }
+                            catch ( Exception ex )
+                            {
+                                AddinLog.Warn( "Send: Escape не отправлен — " + AddinLog.Describe( ex ) );
+                            }
+                        }
                     }
 
                     LaunchTelegramSendPath( list );
@@ -1120,69 +1134,6 @@ namespace TelegramShareAddin
         /// Закрывает открытое окно «Переслать…» кнопкой «Отмена».
         /// true — окна нет или оно успешно закрылось.
         /// </summary>
-        public static bool ClosePicker( int processId , int timeoutMs )
-        {
-            if ( processId == 0 || !IsPickerOpen( processId ) )
-            {
-                return true;
-            }
-
-            bool acted = false;
-
-            foreach ( AutomationElement window in TopWindows( processId ) )
-            {
-                if ( !HasPickerMarkers( window ) )
-                {
-                    continue;
-                }
-
-                AutomationElement cancel = FindButton( window , "Отмена" , "Cancel" , "Закрыть" , "Close" );
-                if ( cancel == null )
-                {
-                    continue;
-                }
-
-                try
-                {
-                    object pattern;
-                    if ( cancel.TryGetCurrentPattern( InvokePattern.Pattern , out pattern ) )
-                    {
-                        ( (InvokePattern) pattern ).Invoke( );
-                        acted = true;
-                        AddinLog.Info( "Send: старое окно «Переслать…» закрыто" );
-                    }
-                }
-                catch ( Exception ex )
-                {
-                    AddinLog.Warn( "Send: не удалось нажать «Отмена» — " + AddinLog.Describe( ex ) );
-                }
-            }
-
-            if ( !acted )
-            {
-                // На этапе выбора чата кнопки «Отмена» нет — закрываем окно клавишей Escape.
-                try
-                {
-                    using ( Process process = Process.GetProcessById( processId ) )
-                    {
-                        IntPtr hwnd = process.MainWindowHandle;
-
-                        if ( hwnd != IntPtr.Zero && UiWin.EnsureForeground( hwnd ) )
-                        {
-                            UiWin.SendKeysTo( processId , "{ESC}" , "Telegram" );
-                            AddinLog.Info( "Send: окно «Переслать…» закрыто клавишей Escape" );
-                        }
-                    }
-                }
-                catch ( Exception ex )
-                {
-                    AddinLog.Warn( "Send: не удалось закрыть окно «Переслать…» — " + AddinLog.Describe( ex ) );
-                }
-            }
-
-            return UiWin.WaitUntil( ( ) => !IsPickerOpen( processId ) , timeoutMs );
-        }
-
         private static bool HasPickerMarkers( AutomationElement window )
         {
             try
@@ -1243,34 +1194,6 @@ namespace TelegramShareAddin
             return false;
         }
 
-        private static AutomationElement FindButton( AutomationElement root , params string[ ] names )
-        {
-            try
-            {
-                var condition = new PropertyCondition( AutomationElement.ControlTypeProperty , ControlType.Button );
-                AutomationElementCollection buttons = root.FindAll( TreeScope.Descendants , condition );
-
-                foreach ( AutomationElement button in buttons )
-                {
-                    string name = button.Current.Name ?? string.Empty;
-
-                    foreach ( string candidate in names )
-                    {
-                        if ( string.Equals( name , candidate , StringComparison.OrdinalIgnoreCase ) )
-                        {
-                            return button;
-                        }
-                    }
-                }
-            }
-            catch
-            {
-            }
-
-            return null;
-        }
-
-        /// <summary>Заголовок главного окна Telegram (в нём видно имя открытого чата).</summary>
         public static string MainWindowTitle( int processId )
         {
             if ( processId == 0 )
