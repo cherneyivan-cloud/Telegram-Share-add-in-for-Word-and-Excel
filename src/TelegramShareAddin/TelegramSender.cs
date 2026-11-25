@@ -191,17 +191,7 @@ namespace TelegramShareAddin
             SendWithPickerPreparedFiles( new string[ ] { tempFile } , null );
         }
 
-        private static int _pickerActive;
-        private static System.Threading.Timer _pickerWatchdog;
-
-        /// <summary>Открыто ли сейчас окно «Переслать…», запущенное надстройкой.</summary>
-        public static bool IsPickerBusy
-        {
-            get
-            {
-                return Volatile.Read( ref _pickerActive ) != 0;
-            }
-        }
+        private static readonly object PickerGate = new object( );
 
         /// <summary>Открыть в Telegram окно «Переслать…» сразу для нескольких файлов.</summary>
         public void SendWithPickerPreparedFiles( IEnumerable<string> files , string clipboardPath )
@@ -212,35 +202,20 @@ namespace TelegramShareAddin
                 throw new InvalidOperationException( "Нет файлов для отправки." );
             }
 
-            // Пока предыдущее окно «Переслать…» не закрыто, второй запуск запрещён:
-            // Telegram добавил бы файл к уже открытым вложениям, и ушло бы несколько копий.
-            if ( Interlocked.CompareExchange( ref _pickerActive , 1 , 0 ) != 0 )
+            lock ( PickerGate )
             {
-                AddinLog.Warn( "Send: окно «Переслать…» ещё открыто — повторный запуск пропущен" );
-                throw new InvalidOperationException(
-                    "Окно «Переслать…» уже открыто в Telegram. Отправьте файл в нём или закройте его, затем повторите." );
-            }
+                int pid = GetTelegramProcessId( );
 
-            try
-            {
-                // Дополнительная проверка: окно могло остаться открытым с прошлого раза
-                // (например, если сторожевой поток ещё не снял флаг).
-                if ( TelegramUi.IsPickerOpen( GetTelegramProcessId( ) ) )
+                // Telegram добавляет каждый новый файл к уже открытому окну «Переслать…».
+                // Поэтому сначала закрываем его, чтобы в новом окне был ровно один файл.
+                if ( !TelegramUi.ClosePicker( pid , 3000 ) )
                 {
-                    AddinLog.Warn( "Send: окно «Переслать…» уже открыто — запуск пропущен" );
                     throw new InvalidOperationException(
-                        "Окно «Переслать…» уже открыто в Telegram. Отправьте файл в нём или закройте его, затем повторите." );
+                        "В Telegram открыто окно «Переслать…», закрыть его не удалось. Закройте окно вручную и повторите." );
                 }
 
                 LaunchTelegramSendPath( list );
             }
-            catch
-            {
-                Interlocked.Exchange( ref _pickerActive , 0 );
-                throw;
-            }
-
-            StartPickerWatchdog( );
 
             // После передачи в буфере — путь исходного файла (если он есть).
             try
@@ -252,52 +227,6 @@ namespace TelegramShareAddin
             catch
             {
             }
-        }
-
-        /// <summary>
-        /// Снимает запрет, когда окно «Переслать…» закрылось (файл отправлен или окно закрыли).
-        /// Отдельный поток нужен, потому что отправка не должна ждать пользователя.
-        /// </summary>
-        private static void StartPickerWatchdog( )
-        {
-            System.Threading.Timer previous = _pickerWatchdog;
-            _pickerWatchdog = null;
-
-            if ( previous != null )
-            {
-                try { previous.Dispose( ); } catch { }
-            }
-
-            int ticks = 0;
-
-            _pickerWatchdog = new System.Threading.Timer( state =>
-            {
-                ticks++;
-
-                bool open = false;
-                try
-                {
-                    open = TelegramUi.IsPickerOpen( GetTelegramProcessId( ) );
-                }
-                catch
-                {
-                }
-
-                // Даём окну 10 секунд на появление, затем ждём его закрытия.
-                bool appeared = ticks > 10;
-                bool timedOut = ticks > 600;
-
-                if ( timedOut || ( appeared && !open ) )
-                {
-                    Interlocked.Exchange( ref _pickerActive , 0 );
-
-                    System.Threading.Timer timer = _pickerWatchdog;
-                    if ( timer != null )
-                    {
-                        try { timer.Dispose( ); } catch { }
-                    }
-                }
-            } , null , 1000 , 1000 );
         }
 
         private void OpenChatAndSend( SendOptions options )
@@ -1094,7 +1023,7 @@ namespace TelegramShareAddin
             return AutomationElement.RootElement.FindAll( TreeScope.Children , condition );
         }
 
-        /// <summary>Окно «Переслать…» открыто? Тогда новый файл добавлять нельзя — уйдёт лишняя копия.</summary>
+        /// <summary>Окно «Переслать…» открыто?</summary>
         public static bool IsPickerOpen( int processId )
         {
             if ( processId == 0 )
@@ -1104,55 +1033,167 @@ namespace TelegramShareAddin
 
             foreach ( AutomationElement window in TopWindows( processId ) )
             {
-                try
+                if ( HasPickerMarkers( window ) )
                 {
-                    bool hasCaption = false;
-
-                    var elements = window.FindAll( TreeScope.Descendants , Condition.TrueCondition );
-
-                    foreach ( AutomationElement element in elements )
-                    {
-                        ControlType type;
-                        string name;
-
-                        try
-                        {
-                            type = element.Current.ControlType;
-                            name = element.Current.Name;
-                        }
-                        catch
-                        {
-                            continue;
-                        }
-
-                        if ( string.IsNullOrEmpty( name ) )
-                        {
-                            continue;
-                        }
-
-                        // Поле подписи есть только в окне отправки файла.
-                        if ( type == ControlType.Edit &&
-                             ( name.IndexOf( "Подпись" , StringComparison.OrdinalIgnoreCase ) >= 0 ||
-                               name.IndexOf( "Caption" , StringComparison.OrdinalIgnoreCase ) >= 0 ) )
-                        {
-                            hasCaption = true;
-                            continue;
-                        }
-
-                        if ( hasCaption && type == ControlType.Button &&
-                             ( name.StartsWith( "Отправить" , StringComparison.OrdinalIgnoreCase ) ||
-                               name.StartsWith( "Send" , StringComparison.OrdinalIgnoreCase ) ) )
-                        {
-                            return true;
-                        }
-                    }
-                }
-                catch
-                {
+                    return true;
                 }
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Закрывает открытое окно «Переслать…» кнопкой «Отмена».
+        /// true — окна нет или оно успешно закрылось.
+        /// </summary>
+        public static bool ClosePicker( int processId , int timeoutMs )
+        {
+            if ( processId == 0 || !IsPickerOpen( processId ) )
+            {
+                return true;
+            }
+
+            bool acted = false;
+
+            foreach ( AutomationElement window in TopWindows( processId ) )
+            {
+                if ( !HasPickerMarkers( window ) )
+                {
+                    continue;
+                }
+
+                AutomationElement cancel = FindButton( window , "Отмена" , "Cancel" , "Закрыть" , "Close" );
+                if ( cancel == null )
+                {
+                    continue;
+                }
+
+                try
+                {
+                    object pattern;
+                    if ( cancel.TryGetCurrentPattern( InvokePattern.Pattern , out pattern ) )
+                    {
+                        ( (InvokePattern) pattern ).Invoke( );
+                        acted = true;
+                        AddinLog.Info( "Send: старое окно «Переслать…» закрыто" );
+                    }
+                }
+                catch ( Exception ex )
+                {
+                    AddinLog.Warn( "Send: не удалось нажать «Отмена» — " + AddinLog.Describe( ex ) );
+                }
+            }
+
+            if ( !acted )
+            {
+                // На этапе выбора чата кнопки «Отмена» нет — закрываем окно клавишей Escape.
+                try
+                {
+                    using ( Process process = Process.GetProcessById( processId ) )
+                    {
+                        IntPtr hwnd = process.MainWindowHandle;
+
+                        if ( hwnd != IntPtr.Zero && UiWin.EnsureForeground( hwnd ) )
+                        {
+                            UiWin.SendKeysTo( processId , "{ESC}" , "Telegram" );
+                            AddinLog.Info( "Send: окно «Переслать…» закрыто клавишей Escape" );
+                        }
+                    }
+                }
+                catch ( Exception ex )
+                {
+                    AddinLog.Warn( "Send: не удалось закрыть окно «Переслать…» — " + AddinLog.Describe( ex ) );
+                }
+            }
+
+            return UiWin.WaitUntil( ( ) => !IsPickerOpen( processId ) , timeoutMs );
+        }
+
+        private static bool HasPickerMarkers( AutomationElement window )
+        {
+            try
+            {
+                bool hasCaption = false;
+
+                var elements = window.FindAll( TreeScope.Descendants , Condition.TrueCondition );
+
+                foreach ( AutomationElement element in elements )
+                {
+                    ControlType type;
+                    string name;
+
+                    try
+                    {
+                        type = element.Current.ControlType;
+                        name = element.Current.Name;
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    if ( string.IsNullOrEmpty( name ) )
+                    {
+                        continue;
+                    }
+
+                    // Первый этап окна «Переслать…» — выбор чата, заголовок «Переслать...».
+                    if ( type == ControlType.Text &&
+                         ( name.StartsWith( "Переслать" , StringComparison.OrdinalIgnoreCase ) ||
+                           name.StartsWith( "Forward" , StringComparison.OrdinalIgnoreCase ) ) )
+                    {
+                        return true;
+                    }
+
+                    // Поле подписи есть только в окне отправки файла.
+                    if ( type == ControlType.Edit &&
+                         ( name.IndexOf( "Подпись" , StringComparison.OrdinalIgnoreCase ) >= 0 ||
+                           name.IndexOf( "Caption" , StringComparison.OrdinalIgnoreCase ) >= 0 ) )
+                    {
+                        hasCaption = true;
+                        continue;
+                    }
+
+                    if ( hasCaption && type == ControlType.Button &&
+                         ( name.StartsWith( "Отправить" , StringComparison.OrdinalIgnoreCase ) ||
+                           name.StartsWith( "Send" , StringComparison.OrdinalIgnoreCase ) ) )
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        private static AutomationElement FindButton( AutomationElement root , params string[ ] names )
+        {
+            try
+            {
+                var condition = new PropertyCondition( AutomationElement.ControlTypeProperty , ControlType.Button );
+                AutomationElementCollection buttons = root.FindAll( TreeScope.Descendants , condition );
+
+                foreach ( AutomationElement button in buttons )
+                {
+                    string name = button.Current.Name ?? string.Empty;
+
+                    foreach ( string candidate in names )
+                    {
+                        if ( string.Equals( name , candidate , StringComparison.OrdinalIgnoreCase ) )
+                        {
+                            return button;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
         }
 
         /// <summary>Заголовок главного окна Telegram (в нём видно имя открытого чата).</summary>

@@ -43,7 +43,7 @@
                    "<group id=\"TelegramShareGroup\" label=\"Telegram\">" +
                    Button( RibbonIds.SendVia , "Отправить в Telegram" , "OnSendViaTelegram" ,
                            "Отправить в текущий чат Telegram" ,
-                           "Сохраняет документ и открывает окно выбора чата Telegram" ) +
+                           "Сохраняет документ и открывает в Telegram окно «Переслать…» — выберите чат вручную" ) +
                    Button( RibbonIds.SendMessage , RibbonLabels.SendMessage + "+сообщение" , "OnSendButton" ,
                            "Отправить в Telegram с сообщением" ,
                            "Сохраняет текущий документ и отправляет его выбранному контакту с подписью" ) +
