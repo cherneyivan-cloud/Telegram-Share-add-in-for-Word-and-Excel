@@ -15,7 +15,7 @@ namespace TelegramShareAddin
     public enum SendFileFormat
     {
         Pdf = 0,
-        Docx = 1
+        Native = 1
     }
 
     /// <summary>Мессенджер, в который отправляется файл.</summary>
@@ -30,10 +30,8 @@ namespace TelegramShareAddin
     {
         public string Contact { get; set; }
         public string Message { get; set; }
-        public SendFileFormat Format { get; set; }
-        public Messenger Messenger { get; set; }
 
-        /// <summary>true — контакт выбран из списка чатов (открываем чат кликом(.</summary>
+        /// <summary>true — контакт выбран из списка чатов (открываем чат кликом).</summary>
         public bool OpenByChatName { get; set; }
     }
 
@@ -65,21 +63,30 @@ namespace TelegramShareAddin
     /// </summary>
     public class TelegramSender
     {
-        private const int SW_RESTORE = 9;
 
         private readonly Settings _settings;
+
+        private static string _cachedExePath;
 
         public TelegramSender( Settings settings )
         {
             _settings = settings ?? new Settings( );
         }
 
-        /// <summary>Путь во временной папке с заданным именем файла.</summary>
+        /// <summary>Путь во временной папке с заданным именем файла (имя делается уникальным).</summary>
         public static string NewTempFile( string fileName )
         {
             string dir = Path.Combine( Path.GetTempPath( ) , "TelegramShare" );
             Directory.CreateDirectory( dir );
-            return Path.Combine( dir , SanitizeFileName( fileName ) );
+
+            string name = SanitizeFileName( fileName );
+            string ext = Path.GetExtension( name );
+            string baseName = Path.GetFileNameWithoutExtension( name );
+
+            // Уникальный суффикс: две одновременные отправки не перетирают файл друг друга.
+            string unique = baseName + "_" + Guid.NewGuid( ).ToString( "N" ).Substring( 0 , 8 ) + ext;
+
+            return Path.Combine( dir , unique );
         }
 
         private static string SanitizeFileName( string name )
@@ -96,11 +103,10 @@ namespace TelegramShareAddin
             return name;
         }
 
-        /// <summary>Удалить временные файлы прошлых отправок (старше суток).</summary>
+        /// <summary>Удалить временные файлы прошлых отправок (старше суток) только из своей папки.</summary>
         public static void CleanupOldTempFiles( )
         {
             DeleteOld( Path.Combine( Path.GetTempPath( ) , "TelegramShare" ) );
-            DeleteOld( Path.GetTempPath( ) );
         }
 
         private static void DeleteOld( string dir )
@@ -111,7 +117,7 @@ namespace TelegramShareAddin
                 {
                     return;
                 }
-                foreach ( string file in Directory.GetFiles( dir , "TelegramShare*" ) )
+                foreach ( string file in Directory.GetFiles( dir ) )
                 {
                     try
                     {
@@ -185,11 +191,12 @@ namespace TelegramShareAddin
 
         private void OpenChatAndSend( SendOptions options )
         {
-            int telegramPid;
+            string contact = options.Contact.Trim( );
+            bool opened;
 
             if ( options.OpenByChatName )
             {
-                telegramPid = GetTelegramProcessId( );
+                int telegramPid = GetTelegramProcessId( );
                 if ( telegramPid == 0 )
                 {
                     throw new InvalidOperationException( "Telegram Desktop не запущен. Запустите Telegram и повторите." );
@@ -201,55 +208,83 @@ namespace TelegramShareAddin
                     throw new InvalidOperationException( "Не найдено окно Telegram Desktop. Разверните окно Telegram из трея." );
                 }
 
-                ShowWindow( hwnd , SW_RESTORE );
-                SetForegroundWindow( hwnd );
-                Thread.Sleep( 400 );
+                UiWin.EnsureForeground( hwnd );
+                Thread.Sleep( 300 );
 
-                bool opened = TelegramUi.OpenChat( telegramPid , options.Contact.Trim( ) , 8000 );
+                opened = TelegramUi.OpenChat( telegramPid , contact , 8000 );
+
                 if ( !opened )
                 {
-                    throw new InvalidOperationException( "Не удалось открыть чат «" + options.Contact + "» в Telegram. Нажмите «Обновить из Telegram» и выберите чат заново." );
+                    // Чат мог оказаться ниже в списке: пробуем открыть по ссылке.
+                    AddinCore.Log( "Send: чат не найден в списке, пробую ссылку" );
+                    opened = TryOpenByUri( contact );
                 }
 
-                Thread.Sleep( _settings.ChatOpenDelayMs );
+                if ( !opened )
+                {
+                    throw new InvalidOperationException( "Не удалось открыть чат «" + contact +
+                        "» в Telegram. Нажмите «Обновить из Telegram» и выберите чат заново." );
+                }
+
+                Thread.Sleep( _settings.ChatOpenDelay );
             }
             else
             {
-                string uri = BuildTelegramUri( options.Contact.Trim( ) );
-                LaunchTelegram( uri );
-                Thread.Sleep( _settings.ChatOpenDelayMs );
-
-                IntPtr hwnd = FindTelegramWindow( );
-                if ( hwnd == IntPtr.Zero )
-                {
-                    throw new InvalidOperationException( "Не найдено окно Telegram Desktop. Разверните окно Telegram из трея и повторите." );
-                }
-
-                ShowWindow( hwnd , SW_RESTORE );
-                SetForegroundWindow( hwnd );
-                Thread.Sleep( 400 );
-
-                telegramPid = GetTelegramProcessId( );
+                LaunchTelegram( BuildTelegramUri( contact ) );
+                Thread.Sleep( _settings.ChatOpenDelay );
             }
 
-            SendKeys.SendWait( "^v" );
-            AddinCore.Log( "Send: файл вставлен, ожидаю диалог Telegram" );
-            Thread.Sleep( _settings.PasteDelayMs );
+            IntPtr window = FindTelegramWindow( );
+            if ( window == IntPtr.Zero )
+            {
+                throw new InvalidOperationException( "Не найдено окно Telegram Desktop. Разверните окно Telegram из трея и повторите." );
+            }
 
-            bool confirmed = TelegramUi.ConfirmSend( options.Message , telegramPid , 8000 );
+            if ( !UiWin.EnsureForeground( window ) )
+            {
+                throw new InvalidOperationException( "Не удалось вывести Telegram на передний план — отправка отменена." );
+            }
+
+            int pid = UiWin.ProcessIdOf( window );
+
+            // Клавиши уходят в активное окно: вставляем только когда фокус точно в Telegram.
+            UiWin.SendKeysTo( pid , "^v" , "Telegram" );
+            AddinCore.Log( "Send: файл вставлен, ожидаю диалог Telegram" );
+            Thread.Sleep( _settings.PasteDelay );
+
+            bool confirmed = TelegramUi.ConfirmSend( options.Message , pid , 8000 );
             AddinCore.Log( "Send: UIA подтверждение = " + confirmed );
 
             if ( !confirmed )
             {
+                // Резервный путь — тоже только при фокусе в Telegram, иначе текст уйдёт чужому приложению.
                 if ( !string.IsNullOrEmpty( options.Message ) )
                 {
-                    SendKeys.SendWait( EscapeSendKeys( options.Message ) );
+                    UiWin.SendKeysTo( pid , EscapeSendKeys( options.Message ) , "Telegram" );
                     Thread.Sleep( 300 );
                 }
-                SendKeys.SendWait( "{ENTER}" );
-            }
 
-            Thread.Sleep( 1500 );
+                UiWin.SendKeysTo( pid , "{ENTER}" , "Telegram" );
+            }
+        }
+
+        private static bool TryOpenByUri( string contact )
+        {
+            try
+            {
+                if ( contact.IndexOf( ' ' ) >= 0 )
+                {
+                    return false;
+                }
+
+                LaunchTelegram( BuildTelegramUri( contact ) );
+                return true;
+            }
+            catch ( Exception ex )
+            {
+                AddinLog.Warn( "Send: ссылка не открылась — " + AddinLog.Describe( ex ) );
+                return false;
+            }
         }
 
         private static void LaunchTelegram( string uri )
@@ -290,18 +325,35 @@ namespace TelegramShareAddin
 
         private static string FindTelegramExe( )
         {
-            foreach ( var p in GetTelegramProcesses( ) )
+            if ( !string.IsNullOrEmpty( _cachedExePath ) && File.Exists( _cachedExePath ) )
             {
-                try
+                return _cachedExePath;
+            }
+
+            Process[ ] processes = UiWin.FindProcesses( "Telegram" );
+            try
+            {
+                foreach ( Process p in processes )
                 {
-                    string path = p.MainModule.FileName;
-                    if ( !string.IsNullOrEmpty( path ) && File.Exists( path ) )
+                    try
                     {
-                        return path;
+                        string path = p.MainModule.FileName;
+                        if ( !string.IsNullOrEmpty( path ) && File.Exists( path ) )
+                        {
+                            _cachedExePath = path;
+                            return path;
+                        }
+                    }
+                    catch
+                    {
                     }
                 }
-                catch
+            }
+            finally
+            {
+                foreach ( Process p in processes )
                 {
+                    p.Dispose( );
                 }
             }
 
@@ -362,32 +414,63 @@ namespace TelegramShareAddin
 
         private static IntPtr FindTelegramWindow( )
         {
-            foreach ( var p in GetTelegramProcesses( ) )
+            Process[ ] processes = UiWin.FindProcesses( "Telegram" );
+            try
             {
-                IntPtr h = p.MainWindowHandle;
-                if ( h != IntPtr.Zero && IsWindowVisible( h ) )
+                foreach ( Process p in processes )
                 {
-                    return h;
+                    try
+                    {
+                        IntPtr h = p.MainWindowHandle;
+                        if ( h != IntPtr.Zero && UiWin.IsWindowVisible( h ) )
+                        {
+                            return h;
+                        }
+                    }
+                    catch
+                    {
+                    }
                 }
             }
+            finally
+            {
+                foreach ( Process p in processes )
+                {
+                    p.Dispose( );
+                }
+            }
+
             return IntPtr.Zero;
         }
 
         public static int GetTelegramProcessId( )
         {
-            foreach ( var p in GetTelegramProcesses( ) )
+            Process[ ] processes = UiWin.FindProcesses( "Telegram" );
+            try
             {
-                if ( p.MainWindowHandle != IntPtr.Zero )
+                foreach ( Process p in processes )
                 {
-                    return p.Id;
+                    try
+                    {
+                        if ( p.MainWindowHandle != IntPtr.Zero )
+                        {
+                            return p.Id;
+                        }
+                    }
+                    catch
+                    {
+                    }
                 }
             }
-            return 0;
-        }
+            finally
+            {
+                foreach ( Process p in processes )
+                {
+                    p.Dispose( );
+                }
+            }
 
-        private static IEnumerable<Process> GetTelegramProcesses( )
-        {
-            return Process.GetProcesses( ).Where( x => x.ProcessName.IndexOf( "Telegram" , StringComparison.OrdinalIgnoreCase ) >= 0 );
+            return 0;
         }
 
         private static string EscapeSendKeys( string text )
@@ -418,14 +501,8 @@ namespace TelegramShareAddin
             return sb.ToString( );
         }
 
-        [DllImport( "user32.dll" )]
-        private static extern bool SetForegroundWindow( IntPtr hWnd );
 
-        [DllImport( "user32.dll" )]
-        private static extern bool ShowWindow( IntPtr hWnd , int nCmdShow );
 
-        [DllImport( "user32.dll" )]
-        private static extern bool IsWindowVisible( IntPtr hWnd );
     }
 
     /// <summary>
@@ -485,34 +562,91 @@ namespace TelegramShareAddin
             }
 
             int deadline = Environment.TickCount + timeoutMs;
+
             while ( Environment.TickCount < deadline )
             {
+                AutomationElement chatList;
                 try
                 {
-                    AutomationElement chatList = FindFirstChatList( processId );
-                    if ( chatList != null )
-                    {
-                        List<ChatEntry> entries = ReadChatEntries( chatList );
-                        foreach ( ChatEntry e in entries )
-                        {
-                            if ( string.Equals( e.Name , chatName , StringComparison.OrdinalIgnoreCase ) )
-                            {
-                                if ( SelectChatItem( e.Element ) )
-                                {
-                                    return true;
-                                }
-                            }
-                        }
-                    }
+                    chatList = FindFirstChatList( processId );
                 }
                 catch
                 {
+                    chatList = null;
                 }
 
-                Thread.Sleep( 300 );
+                if ( chatList == null )
+                {
+                    Thread.Sleep( 300 );
+                    continue;
+                }
+
+                if ( SelectByName( chatList , chatName ) )
+                {
+                    return true;
+                }
+
+                // Чат мог быть ниже видимой части списка — листаем вниз.
+                if ( !ScrollList( chatList , ScrollAmount.LargeIncrement ) )
+                {
+                    break;
+                }
+
+                Thread.Sleep( 250 );
             }
 
             return false;
+        }
+
+        private static bool SelectByName( AutomationElement chatList , string chatName )
+        {
+            List<ChatEntry> entries;
+            try
+            {
+                entries = ReadChatEntries( chatList );
+            }
+            catch
+            {
+                return false;
+            }
+
+            foreach ( ChatEntry e in entries )
+            {
+                if ( string.Equals( e.Name , chatName , StringComparison.OrdinalIgnoreCase ) )
+                {
+                    if ( SelectChatItem( e.Element ) )
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ScrollList( AutomationElement list , ScrollAmount amount )
+        {
+            try
+            {
+                object pattern;
+                if ( !list.TryGetCurrentPattern( ScrollPattern.Pattern , out pattern ) )
+                {
+                    return false;
+                }
+
+                var scroll = (ScrollPattern) pattern;
+                if ( !scroll.Current.VerticallyScrollable || scroll.Current.VerticalScrollPercent >= 99 )
+                {
+                    return false;
+                }
+
+                scroll.Scroll( ScrollAmount.NoAmount , amount );
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         public static bool ConfirmSend( string caption , int processId , int timeoutMs )

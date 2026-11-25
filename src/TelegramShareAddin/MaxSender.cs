@@ -48,7 +48,7 @@ namespace TelegramShareAddin
             try
             {
                 IntPtr hwnd = MaxUi.EnsureWindow( 15000 );
-                MaxUi.Activate( hwnd );
+                UiWin.EnsureForeground( hwnd );
                 Thread.Sleep( 700 );
 
                 int pid = MaxUi.GetProcessId( hwnd );
@@ -67,9 +67,9 @@ namespace TelegramShareAddin
                     string username = MaxUi.NormalizeUsername( contact );
                     if ( username != null && MaxUi.OpenByUsername( username ) )
                     {
-                        Thread.Sleep( _settings.ChatOpenDelayMs );
+                        Thread.Sleep( _settings.ChatOpenDelay );
                         hwnd = MaxUi.EnsureWindow( 15000 );
-                        MaxUi.Activate( hwnd );
+                        UiWin.EnsureForeground( hwnd );
                         pid = MaxUi.GetProcessId( hwnd );
                         opened = true;
                     }
@@ -87,13 +87,20 @@ namespace TelegramShareAddin
                         "или откройте его в MAX вручную и повторите отправку." );
                 }
 
-                Thread.Sleep( Math.Max( 800 , _settings.ChatOpenDelayMs / 2 ) );
+                Thread.Sleep( Math.Max( 800 , _settings.ChatOpenDelay / 2 ) );
 
                 MaxUi.FocusComposer( hwnd );
                 Thread.Sleep( 300 );
 
                 ClipboardHelper.SetFileAndPath( tempFile );
-                SendKeys.SendWait( "^v" );
+
+                // Перед вставкой убеждаемся, что активен именно MAX.
+                if ( !UiWin.EnsureForeground( hwnd ) )
+                {
+                    throw new InvalidOperationException( "Не удалось вывести MAX на передний план — отправка отменена." );
+                }
+
+                UiWin.SendKeysTo( pid , "^v" , "MAX" );
 
                 if ( !MaxUi.WaitForPendingAttachment( hwnd , 12000 ) )
                 {
@@ -103,7 +110,7 @@ namespace TelegramShareAddin
                 if ( !string.IsNullOrEmpty( options.Message ) )
                 {
                     ClipboardHelper.SetText( options.Message );
-                    SendKeys.SendWait( "^v" );
+                    UiWin.SendKeysTo( pid , "^v" , "MAX" );
                     Thread.Sleep( 600 );
                 }
 
@@ -136,26 +143,18 @@ namespace TelegramShareAddin
         private const int MOUSEEVENTF_LEFTUP = 0x0004;
         private const int MOUSEEVENTF_WHEEL = 0x0800;
 
-        public static IEnumerable<Process> GetProcesses( )
+        public static List<UiWin.WindowProcess> GetProcesses( )
         {
-            return Process.GetProcesses( ).Where(
-                p => string.Equals( p.ProcessName , "max" , StringComparison.OrdinalIgnoreCase ) );
+            return UiWin.SnapshotProcesses( "max" );
         }
 
         private static string FindMaxExe( )
         {
-            foreach ( Process p in GetProcesses( ) )
+            foreach ( UiWin.WindowProcess p in GetProcesses( ) )
             {
-                try
+                if ( !string.IsNullOrEmpty( p.ExecutablePath ) && File.Exists( p.ExecutablePath ) )
                 {
-                    string path = p.MainModule.FileName;
-                    if ( !string.IsNullOrEmpty( path ) && File.Exists( path ) )
-                    {
-                        return path;
-                    }
-                }
-                catch
-                {
+                    return p.ExecutablePath;
                 }
             }
 
@@ -183,7 +182,7 @@ namespace TelegramShareAddin
             IntPtr best = IntPtr.Zero;
             int bestArea = 0;
 
-            foreach ( Process p in GetProcesses( ) )
+            foreach ( UiWin.WindowProcess p in GetProcesses( ) )
             {
                 int pid = p.Id;
 
@@ -227,18 +226,11 @@ namespace TelegramShareAddin
             }
 
             // Запасной вариант: обычное видимое главное окно.
-            foreach ( Process p in GetProcesses( ) )
+            foreach ( UiWin.WindowProcess p in GetProcesses( ) )
             {
-                try
+                if ( p.MainWindowHandle != IntPtr.Zero )
                 {
-                    IntPtr h = p.MainWindowHandle;
-                    if ( h != IntPtr.Zero )
-                    {
-                        return h;
-                    }
-                }
-                catch
-                {
+                    return p.MainWindowHandle;
                 }
             }
 
@@ -332,7 +324,36 @@ namespace TelegramShareAddin
             }
         }
 
+        private static List<MessengerChatInfo> _cachedChats;
+        private static DateTime _cacheTime;
+        private static int _cachePid;
+
+        /// <summary>Кэш списка чатов: повторное открытие диалога не дёргает MAX.</summary>
         public static List<MessengerChatInfo> GetChats( int pid )
+        {
+            return GetChats( pid , false );
+        }
+
+        public static List<MessengerChatInfo> GetChats( int pid , bool refresh )
+        {
+            if ( !refresh && _cachedChats != null && _cachePid == pid &&
+                 ( DateTime.UtcNow - _cacheTime ).TotalMinutes < 5 )
+            {
+                return new List<MessengerChatInfo>( _cachedChats );
+            }
+
+            List<MessengerChatInfo> chats = ReadChats( pid );
+            if ( chats.Count > 0 )
+            {
+                _cachedChats = chats;
+                _cachePid = pid;
+                _cacheTime = DateTime.UtcNow;
+            }
+
+            return chats;
+        }
+
+        private static List<MessengerChatInfo> ReadChats( int pid )
         {
             var result = new List<MessengerChatInfo>( );
             var seen = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
@@ -341,35 +362,6 @@ namespace TelegramShareAddin
             if ( hwnd == IntPtr.Zero )
             {
                 return result;
-            }
-
-            Activate( hwnd );
-            Thread.Sleep( 500 );
-
-            // Если MAX был свёрнут в трей, окно есть, но QML ещё не отрисован
-            // (UI Automation не видит список). Повторный запуск exe активирует
-            // уже работающий экземпляр и заставляет его отрисовать интерфейс.
-            if ( ReadVisibleNames( pid ).Count == 0 )
-            {
-                try
-                {
-                    string exe = FindMaxExe( );
-                    if ( !string.IsNullOrEmpty( exe ) )
-                    {
-                        Process.Start( new ProcessStartInfo( exe ) { UseShellExecute = true } );
-                        Thread.Sleep( 3500 );
-
-                        hwnd = FindWindow( );
-                        if ( hwnd != IntPtr.Zero )
-                        {
-                            Activate( hwnd );
-                            Thread.Sleep( 600 );
-                        }
-                    }
-                }
-                catch
-                {
-                }
             }
 
             // Основной (детерминированный) способ: у скроллбара списка чатов MAX
@@ -384,7 +376,7 @@ namespace TelegramShareAddin
 
                 try { range.SetValue( 0 ); } catch { }
 
-                for ( double v = 0; v <= 100; v += 5 )
+                for ( double v = 0 ; v <= 100 ; v += 5 )
                 {
                     try { range.SetValue( v ); } catch { }
                     Thread.Sleep( 60 );
@@ -403,6 +395,10 @@ namespace TelegramShareAddin
             }
 
             // Запасной вариант (нет RangeValuePattern) — прокрутка колесом.
+            // Здесь окно должно быть активным: Qt направляет колесо активному окну.
+            UiWin.EnsureForeground( hwnd );
+            Thread.Sleep( 300 );
+
             ScrollToTop( hwnd );
 
             int added = CollectChats( hwnd , result , seen );
@@ -410,7 +406,6 @@ namespace TelegramShareAddin
             // При «холодном» старте первая прокрутка может не сработать. Повторяем.
             if ( added < 15 )
             {
-                Activate( hwnd );
                 Thread.Sleep( 600 );
                 result.Clear( );
                 seen.Clear( );

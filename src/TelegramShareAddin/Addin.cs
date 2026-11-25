@@ -70,22 +70,37 @@ namespace TelegramShareAddin
             return AddinCore.GetImage( control );
         }
 
+        public void OnRibbonLoad( IRibbonUI ribbon )
+        {
+            AddinCore.AttachRibbon( ribbon );
+        }
+
+        public bool OnGetEnabled( IRibbonControl control )
+        {
+            string id = control != null ? control.Id : null;
+            if ( id == RibbonIds.PinQat || id == RibbonIds.Update )
+            {
+                return true;
+            }
+            return HasOpenDocument( );
+        }
+
         public void OnSendButton( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendMessage( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true , Messenger.Telegram );
+            AddinCore.SendMessage( _settings , BuildRequest( ) , Messenger.Telegram );
         }
 
         public void OnSendMax( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendMessage( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true , Messenger.Max );
+            AddinCore.SendMessage( _settings , BuildRequest( ) , Messenger.Max );
         }
 
         public void OnSendViaTelegram( IRibbonControl control )
         {
             EnsureSettings( );
-            AddinCore.SendVia( _settings , HasOpenDocument , SaveActiveDocument , NoDocumentMessage , NativeLabel , true );
+            AddinCore.SendVia( _settings , BuildRequest( ) );
         }
 
         public void OnPinToQat( IRibbonControl control )
@@ -106,6 +121,18 @@ namespace TelegramShareAddin
             {
                 _settings = Settings.Load( );
             }
+        }
+
+        private SendRequest BuildRequest( )
+        {
+            return new SendRequest
+            {
+                HasDocument = HasOpenDocument ,
+                SaveDocument = SaveActiveDocument ,
+                NoDocumentMessage = NoDocumentMessage ,
+                NativeLabel = NativeLabel ,
+                AllowPdf = true
+            };
         }
 
         private bool HasOpenDocument( )

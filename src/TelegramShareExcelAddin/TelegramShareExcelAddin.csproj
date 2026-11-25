@@ -93,11 +93,17 @@
     <Compile Include="..\TelegramShareAddin\UpdateManager.cs">
       <Link>UpdateManager.cs</Link>
     </Compile>
+    <Compile Include="..\TelegramShareAddin\SendingForm.cs">
+      <Link>SendingForm.cs</Link>
+    </Compile>
     <Compile Include="..\TelegramShareAddin\SendForm.cs">
       <Link>SendForm.cs</Link>
     </Compile>
     <Compile Include="..\TelegramShareAddin\FormatForm.cs">
       <Link>FormatForm.cs</Link>
+    </Compile>
+    <Compile Include="..\TelegramShareAddin\UiWin.cs">
+      <Link>UiWin.cs</Link>
     </Compile>
     <Compile Include="..\TelegramShareAddin\AddinLog.cs">
       <Link>AddinLog.cs</Link>

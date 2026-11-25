@@ -12,7 +12,7 @@ namespace TelegramShareAddin
 
         public SendFileFormat Format
         {
-            get { return _docx.Checked ? SendFileFormat.Docx : SendFileFormat.Pdf; }
+            get { return _docx.Checked ? SendFileFormat.Native : SendFileFormat.Pdf; }
         }
 
         public FormatForm( SendFileFormat current , string nativeLabel )
@@ -44,7 +44,7 @@ namespace TelegramShareAddin
                 Width = 280,
                 Height = 22,
                 Text = "PDF",
-                Checked = current != SendFileFormat.Docx
+                Checked = current != SendFileFormat.Native
             };
             _docx = new RadioButton
             {
@@ -53,7 +53,7 @@ namespace TelegramShareAddin
                 Width = 280,
                 Height = 22,
                 Text = nativeLabel,
-                Checked = current == SendFileFormat.Docx
+                Checked = current == SendFileFormat.Native
             };
             Controls.Add( _pdf );
             Controls.Add( _docx );
