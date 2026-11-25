@@ -115,7 +115,7 @@ namespace TelegramShareAddin
             return app != null && app.Workbooks.Count > 0;
         }
 
-        private string SaveActiveDocument( SendFileFormat format )
+        private PreparedFile SaveActiveDocument( SendFileFormat format )
         {
             Excel.Application app = _excelApp;
             if ( app == null )
@@ -126,12 +126,19 @@ namespace TelegramShareAddin
             Excel.Workbook workbook = app.ActiveWorkbook;
 
             string originalName = null;
+            string originalPath = null;
             try
             {
                 originalName = workbook.Name;
+                originalPath = workbook.FullName;
             }
             catch
             {
+            }
+
+            if ( !string.IsNullOrEmpty( originalPath ) && !File.Exists( originalPath ) )
+            {
+                originalPath = null;
             }
 
             string baseName = Path.GetFileNameWithoutExtension( originalName );
@@ -159,7 +166,7 @@ namespace TelegramShareAddin
 
             // Книга принадлежит хосту: освобождать её RCW нельзя.
             ExcelDocumentSaver.Save( workbook , path , format );
-            return path;
+            return new PreparedFile { TempPath = path , OriginalPath = originalPath };
         }
     }
 }

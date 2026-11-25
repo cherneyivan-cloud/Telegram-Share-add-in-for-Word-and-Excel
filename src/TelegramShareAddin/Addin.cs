@@ -115,7 +115,7 @@ namespace TelegramShareAddin
             return app != null && app.Documents.Count > 0;
         }
 
-        private string SaveActiveDocument( SendFileFormat format )
+        private PreparedFile SaveActiveDocument( SendFileFormat format )
         {
             Word.Application app = _wordApp;
             if ( app == null )
@@ -126,12 +126,19 @@ namespace TelegramShareAddin
             Word.Document doc = app.ActiveDocument;
 
             string originalName = null;
+            string originalPath = null;
             try
             {
                 originalName = doc.Name;
+                originalPath = doc.FullName;
             }
             catch
             {
+            }
+
+            if ( !string.IsNullOrEmpty( originalPath ) && !File.Exists( originalPath ) )
+            {
+                originalPath = null;
             }
 
             string baseName = Path.GetFileNameWithoutExtension( originalName );
@@ -159,7 +166,9 @@ namespace TelegramShareAddin
 
             // Документ принадлежит хосту: освобождать его RCW нельзя, иначе Word
             // может получить ObjectDisposedException при следующем обращении.
-            return WordDocumentSaver.Save( doc , path , format );
+            string preparedPath = WordDocumentSaver.Save( doc , path , format );
+
+            return new PreparedFile { TempPath = preparedPath , OriginalPath = originalPath };
         }
     }
 }

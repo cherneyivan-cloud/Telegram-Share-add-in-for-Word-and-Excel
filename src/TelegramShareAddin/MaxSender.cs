@@ -123,10 +123,10 @@ namespace TelegramShareAddin
             }
             finally
             {
-                // После сохранения полный путь к файлу остаётся в буфере обмена.
+                // В буфере — путь исходного документа, а не временной копии.
                 try
                 {
-                    ClipboardHelper.SetText( tempFile );
+                    ClipboardHelper.SetText( options.ClipboardPath ?? tempFile );
                 }
                 catch
                 {

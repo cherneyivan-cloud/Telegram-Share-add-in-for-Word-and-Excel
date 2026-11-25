@@ -160,7 +160,7 @@ namespace TelegramShareAddin
 
                     TelegramSender.CleanupOldTempFiles( );
                     var sender = new TelegramSender( _settings );
-                    sender.SendWithPickerPreparedFiles( paths );
+                    sender.SendWithPickerPreparedFiles( paths , null );
                 }
 
                 MessageBox.Show( "Вложения переданы в Telegram. Выберите чат в окне «Переслать…» и нажмите «Отправить»." , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Information );
@@ -300,7 +300,7 @@ namespace TelegramShareAddin
             return false;
         }
 
-        private string SaveActiveDocument( SendFileFormat format )
+        private PreparedFile SaveActiveDocument( SendFileFormat format )
         {
             object item = GetActiveItem( );
             if ( item == null )
@@ -308,8 +308,9 @@ namespace TelegramShareAddin
                 throw new InvalidOperationException( NoDocumentMessage );
             }
 
-            // Элемент принадлежит хосту (Selection/CurrentItem): его RCW не освобождаем.
-            return OutlookItemSaver.Save( item , format );
+            // Письмо не является файлом на диске: в буфер пойдёт путь к .msg.
+            string path = OutlookItemSaver.Save( item , format );
+            return new PreparedFile { TempPath = path , OriginalPath = null };
         }
 
         private object GetActiveItem( )

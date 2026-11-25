@@ -31,8 +31,21 @@ namespace TelegramShareAddin
         public string Contact { get; set; }
         public string Message { get; set; }
 
+        /// <summary>Путь исходного документа для буфера обмена (null — использовать временный).</summary>
+        public string ClipboardPath { get; set; }
+
         /// <summary>true — контакт выбран из списка чатов (открываем чат кликом).</summary>
         public bool OpenByChatName { get; set; }
+    }
+
+    /// <summary>Подготовленный к отправке файл: временная копия и путь исходного документа.</summary>
+    public sealed class PreparedFile
+    {
+        /// <summary>Файл, который реально уходит в мессенджер.</summary>
+        public string TempPath { get; set; }
+
+        /// <summary>Путь исходного документа (null, если он ещё не сохранён).</summary>
+        public string OriginalPath { get; set; }
     }
 
     /// <summary>Информация о чате мессенджера.</summary>
@@ -74,20 +87,15 @@ namespace TelegramShareAddin
             _settings = settings ?? new Settings( );
         }
 
-        /// <summary>Путь во временной папке с заданным именем файла (имя делается уникальным).</summary>
+        /// <summary>Путь во временной папке с заданным именем файла. Каждая отправка — своя папка.</summary>
         public static string NewTempFile( string fileName )
         {
-            string dir = Path.Combine( Path.GetTempPath( ) , "TelegramShare" );
+            string root = Path.Combine( Path.GetTempPath( ) , "TelegramShare" );
+            string dir = Path.Combine( root , Guid.NewGuid( ).ToString( "N" ).Substring( 0 , 8 ) );
             Directory.CreateDirectory( dir );
 
-            string name = SanitizeFileName( fileName );
-            string ext = Path.GetExtension( name );
-            string baseName = Path.GetFileNameWithoutExtension( name );
-
-            // Уникальный суффикс: две одновременные отправки не перетирают файл друг друга.
-            string unique = baseName + "_" + Guid.NewGuid( ).ToString( "N" ).Substring( 0 , 8 ) + ext;
-
-            return Path.Combine( dir , unique );
+            // Имя сохраняем как у исходного документа: уникальность даёт папка, а не суффикс.
+            return Path.Combine( dir , SanitizeFileName( fileName ) );
         }
 
         private static string SanitizeFileName( string name )
@@ -107,18 +115,32 @@ namespace TelegramShareAddin
         /// <summary>Удалить временные файлы прошлых отправок (старше суток) только из своей папки.</summary>
         public static void CleanupOldTempFiles( )
         {
-            DeleteOld( Path.Combine( Path.GetTempPath( ) , "TelegramShare" ) );
-        }
+            string root = Path.Combine( Path.GetTempPath( ) , "TelegramShare" );
 
-        private static void DeleteOld( string dir )
-        {
             try
             {
-                if ( !Directory.Exists( dir ) )
+                if ( !Directory.Exists( root ) )
                 {
                     return;
                 }
-                foreach ( string file in Directory.GetFiles( dir ) )
+
+                // Каждая отправка лежит в своей подпапке.
+                foreach ( string dir in Directory.GetDirectories( root ) )
+                {
+                    try
+                    {
+                        if ( Directory.GetLastWriteTime( dir ) < DateTime.Now.AddDays( -1 ) )
+                        {
+                            Directory.Delete( dir , true );
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                // Файлы прежнего формата (без подпапок).
+                foreach ( string file in Directory.GetFiles( root ) )
                 {
                     try
                     {
@@ -152,10 +174,10 @@ namespace TelegramShareAddin
             }
             finally
             {
-                // После сохранения полный путь к файлу остаётся в буфере обмена.
+                // После отправки в буфере — путь исходного документа, а не временной копии.
                 try
                 {
-                    ClipboardHelper.SetText( tempFile );
+                    ClipboardHelper.SetText( options.ClipboardPath ?? tempFile );
                 }
                 catch
                 {
@@ -166,11 +188,14 @@ namespace TelegramShareAddin
         /// <summary>Открыть в Telegram окно «Переслать…» для уже подготовленного файла.</summary>
         public void SendWithPickerPreparedFile( string tempFile )
         {
-            SendWithPickerPreparedFiles( new string[ ] { tempFile } );
+            SendWithPickerPreparedFiles( new string[ ] { tempFile } , null );
         }
 
+        private static string _lastPickerKey;
+        private static DateTime _lastPickerTime;
+
         /// <summary>Открыть в Telegram окно «Переслать…» сразу для нескольких файлов.</summary>
-        public void SendWithPickerPreparedFiles( IEnumerable<string> files )
+        public void SendWithPickerPreparedFiles( IEnumerable<string> files , string clipboardPath )
         {
             var list = new List<string>( files );
             if ( list.Count == 0 )
@@ -178,12 +203,30 @@ namespace TelegramShareAddin
                 throw new InvalidOperationException( "Нет файлов для отправки." );
             }
 
+            // Повторный запуск в течение 10 секунд не нужен: Telegram добавил бы
+            // второй экземпляр файла в то же окно «Переслать…», и ушло бы две копии.
+            string key = string.IsNullOrEmpty( clipboardPath )
+                ? string.Join( "|" , list )
+                : clipboardPath;
+
+            if ( string.Equals( _lastPickerKey , key , StringComparison.OrdinalIgnoreCase ) &&
+                 ( DateTime.UtcNow - _lastPickerTime ).TotalSeconds < 10 )
+            {
+                AddinLog.Warn( "Send: повторный запуск «Переслать…» для того же файла пропущен" );
+                return;
+            }
+
+            _lastPickerKey = key;
+            _lastPickerTime = DateTime.UtcNow;
+
             LaunchTelegramSendPath( list );
 
-            // После сохранения полный путь к файлу остаётся в буфере обмена.
+            // После передачи в буфере — путь исходного файла (если он есть).
             try
             {
-                ClipboardHelper.SetText( string.Join( Environment.NewLine , list ) );
+                ClipboardHelper.SetText( string.IsNullOrEmpty( clipboardPath )
+                    ? string.Join( Environment.NewLine , list )
+                    : clipboardPath );
             }
             catch
             {
