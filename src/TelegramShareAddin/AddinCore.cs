@@ -226,7 +226,7 @@ namespace TelegramShareAddin
                     {
                         new TelegramSender( settings ).SendPreparedFile( options , tempFile );
                     }
-                } );
+                } , chosen == Messenger.Telegram );
 
                 // Без модального подтверждения: результат виден в самом мессенджере.
                 AddinLog.Info( "Отправлено: " + chosen );
@@ -244,57 +244,9 @@ namespace TelegramShareAddin
 
         public static void SendVia( Settings settings , SendRequest request )
         {
-            if ( !TryEnterSend( ) )
-            {
-                return;
-            }
-
-            try
-            {
-                AddinLog.Info( "OnSendViaTelegram: enter" );
-
-                if ( !IsEnabled( request ) )
-                {
-                    MessageBox.Show( request.NoDocumentMessage , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Information );
-                    return;
-                }
-
-                SendFileFormat format = settings.LastFormat == "DOCX" ? SendFileFormat.Native : SendFileFormat.Pdf;
-
-                if ( request.AllowPdf )
-                {
-                    using ( var formatForm = new FormatForm( format , request.NativeLabel ) )
-                    {
-                        if ( formatForm.ShowDialog( ) != DialogResult.OK )
-                        {
-                            return;
-                        }
-                        format = formatForm.Format;
-                    }
-                }
-                else
-                {
-                    format = SendFileFormat.Native;
-                }
-
-                PreparedFile prepared = request.SaveDocument( format );
-
-                SendRunner.Run( "Передаю в Telegram…" , ( ) =>
-                {
-                    new TelegramSender( settings ).SendToActiveChat( prepared.TempPath , prepared.OriginalPath );
-                } , true );
-
-                AddinLog.Info( "Передано в Telegram (текущий чат)" );
-            }
-            catch ( Exception ex )
-            {
-                AddinLog.Error( "OnSendViaTelegram" , ex );
-                MessageBox.Show( "Ошибка: " + ex.Message , "Отправить в Telegram" , MessageBoxButtons.OK , MessageBoxIcon.Error );
-            }
-            finally
-            {
-                Interlocked.Exchange( ref _activeSend , 0 );
-            }
+            // Для этой кнопки тоже показываем окно выбора чата (как у «+сообщение»),
+            // но отправка идёт в выбранный чат без окна «Переслать…».
+            SendMessage( settings , request , Messenger.Telegram );
         }
 
         /// <summary>Защита от повторного запуска: два окна отправки одновременно недопустимы.</summary>

@@ -185,58 +185,6 @@ namespace TelegramShareAddin
             }
         }
 
-        /// <summary>Отправить файл в текущий открытый чат Telegram, без окна «Переслать…».</summary>
-        public void SendToActiveChat( string tempFile , string clipboardPath )
-        {
-            int telegramPid = GetTelegramProcessId( );
-            if ( telegramPid == 0 )
-            {
-                throw new InvalidOperationException( "Telegram Desktop не запущен. Запустите Telegram и повторите." );
-            }
-
-            IntPtr window = FindTelegramWindow( );
-            if ( window == IntPtr.Zero )
-            {
-                throw new InvalidOperationException( "Не найдено окно Telegram Desktop. Разверните окно Telegram из трея." );
-            }
-
-            if ( !UiWin.EnsureForeground( window ) )
-            {
-                throw new InvalidOperationException( "Не удалось вывести Telegram на передний план — отправка отменена." );
-            }
-
-            if ( !TelegramUi.FocusComposer( telegramPid ) )
-            {
-                throw new InvalidOperationException(
-                    "Не удалось поставить курсор в поле сообщения Telegram. Откройте нужный чат и повторите." );
-            }
-
-            int pid = UiWin.ProcessIdOf( window );
-
-            ClipboardHelper.SetFileAndPath( tempFile );
-            UiWin.SendKeysTo( pid , "^v" , "Telegram" );
-            AddinCore.Log( "Send: файл вставлен в текущий чат" );
-            Thread.Sleep( _settings.PasteDelay );
-
-            bool confirmed = TelegramUi.ConfirmSend( null , pid , Timeouts.SendDialogMs );
-            AddinCore.Log( "Send: UIA подтверждение = " + confirmed );
-
-            if ( !confirmed )
-            {
-                UiWin.SendKeysTo( pid , "{ENTER}" , "Telegram" );
-            }
-
-            Thread.Sleep( 1500 );
-
-            try
-            {
-                ClipboardHelper.SetText( clipboardPath ?? tempFile );
-            }
-            catch
-            {
-            }
-        }
-
         /// <summary>Открыть в Telegram окно «Переслать…» для уже подготовленного файла.</summary>
         public void SendWithPickerPreparedFile( string tempFile )
         {
@@ -1144,72 +1092,6 @@ namespace TelegramShareAddin
         {
             var condition = new PropertyCondition( AutomationElement.ProcessIdProperty , processId );
             return AutomationElement.RootElement.FindAll( TreeScope.Children , condition );
-        }
-
-        /// <summary>Ставит фокус в поле ввода сообщения Telegram. false — поле не найдено.</summary>
-        public static bool FocusComposer( int processId )
-        {
-            if ( processId == 0 )
-            {
-                return false;
-            }
-
-            foreach ( AutomationElement window in TopWindows( processId ) )
-            {
-                try
-                {
-                    var condition = new PropertyCondition( AutomationElement.ControlTypeProperty , ControlType.Edit );
-                    AutomationElementCollection edits = window.FindAll( TreeScope.Descendants , condition );
-
-                    AutomationElement target = null;
-
-                    foreach ( AutomationElement edit in edits )
-                    {
-                        string name = edit.Current.Name ?? string.Empty;
-
-                        if ( name.IndexOf( "Поиск" , StringComparison.OrdinalIgnoreCase ) >= 0 ||
-                             name.IndexOf( "Search" , StringComparison.OrdinalIgnoreCase ) >= 0 )
-                        {
-                            continue;
-                        }
-
-                        if ( name.IndexOf( "Сообщение" , StringComparison.OrdinalIgnoreCase ) >= 0 ||
-                             name.IndexOf( "Message" , StringComparison.OrdinalIgnoreCase ) >= 0 ||
-                             name.IndexOf( "Написать" , StringComparison.OrdinalIgnoreCase ) >= 0 )
-                        {
-                            target = edit;
-                            break;
-                        }
-                    }
-
-                    if ( target == null )
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        target.SetFocus( );
-                        Thread.Sleep( 200 );
-                        return true;
-                    }
-                    catch ( Exception ex )
-                    {
-                        AddinLog.Warn( "Send: фокус в поле сообщения не установлен — " + AddinLog.Describe( ex ) );
-                    }
-
-                    if ( UiWin.ClickElement( target ) )
-                    {
-                        Thread.Sleep( 200 );
-                        return true;
-                    }
-                }
-                catch
-                {
-                }
-            }
-
-            return false;
         }
 
         /// <summary>Окно «Переслать…» открыто? Тогда новый файл добавлять нельзя — уйдёт лишняя копия.</summary>
